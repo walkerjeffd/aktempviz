@@ -109,7 +109,7 @@ temp_data |>
   scale_fill_viridis_c("# daily\nvalues", trans = "log10") +
   scale_x_date(date_labels = "%b %d", expand = expansion()) +
   labs(x = "day of year", y = "daily mean temp (C)") +
-  facet_wrap(vars(dataset), ncol = 1) +
+  facet_wrap(vars(dataset), ncol = 3) +
   theme_bw()
 
 temp_data |> 
@@ -117,21 +117,24 @@ temp_data |>
   unnest(data) |> 
   count(dataset, yday = yday(date)) |> 
   ggplot(aes(ymd(20001231) + days(yday))) +
-  geom_col(aes(y = n), width = 1) +
-  scale_x_date(date_labels = "%b %d", expand = expansion()) +
+  geom_line(aes(y = n, color = dataset)) +
+  scale_x_date(date_breaks = "2 months", date_labels = "%b %d", expand = expansion()) +
+  scale_color_brewer(palette = "Set1") +
   labs(x = "day of year", y = "# daily values") +
-  facet_wrap(vars(dataset), ncol = 1) +
+  # facet_wrap(vars(dataset), ncol = 1) +
   theme_bw()
 
 temp_data |> 
   select(dataset, station_id, data) |> 
   unnest(data) |> 
   count(dataset, year = year(date)) |> 
+  complete(dataset, year) |> 
   ggplot(aes(year)) +
-  geom_col(aes(y = n), width = 0.9, alpha = 0.75) +
+  geom_col(aes(y = n, fill = dataset), width = 0.9, alpha = 0.75, position = position_dodge()) +
+  scale_fill_brewer(palette = "Set1") +
   scale_x_continuous(expand = expansion(), breaks = scales::pretty_breaks(n = 10)) +
   labs(x = "year", y = "# daily values") +
-  facet_wrap(vars(dataset), ncol = 1) +
+  # facet_wrap(vars(dataset), ncol = 1) +
   theme_bw()
 
 temp_data |> 
@@ -381,6 +384,11 @@ daymet_stn_year_data |>
 
 # merge -------------------------------------------------------------------
 
+temp_data_summer |> 
+  tabyl(year, dataset) |>
+  adorn_totals(where = "both") |> 
+  knitr::kable()
+
 temp <- temp_data_summer |> 
   select(station_id, year, data) |> 
   left_join(
@@ -425,6 +433,7 @@ temp |>
   ggplot(aes(date, mean_temp_c)) +
   geom_hex(bins = 100) +
   scale_fill_viridis_c(trans = "log10") +
+  scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
   labs(x = "date", y = "weekly mean water temp (degC)") +
   theme_bw()
 
@@ -432,7 +441,7 @@ temp |>
   select(-data_day) |> 
   unnest(data_week) |> 
   ggplot(aes(ymd(20001231) + days(yday(date)), mean_temp_c)) +
-  geom_hex(bins = 40) +
+  geom_hex(bins = 50) +
   scale_x_date(date_labels = "%b %d") +
   scale_fill_viridis_c("count", trans = "log10") +
   labs(x = "day of year", y = "weekly mean water temp (degC)") +
@@ -482,17 +491,6 @@ temp_july_7d <- temp |>
     mean_temp_c_7d = mean(mean_temp_c_7d, na.rm = TRUE),
     mean_airtemp_c_7d = mean(mean_airtemp_c_7d, na.rm = TRUE)
   )
-
-temp_july |> 
-  select(-n) |> 
-  pivot_longer(ends_with("_c")) |> 
-  add_count(station_id, name = "n_year") |> 
-  filter(n_year >= 10) |> 
-  ggplot(aes(year, value)) +
-  geom_line(aes(group = station_id), alpha = 0.5) +
-  geom_point(size = 1, alpha = 0.5) +
-  facet_wrap(vars(name)) +
-  theme_bw()
 
 temp_july |> 
   select(station_id, year, airtemp_c = mean_mean_airtemp_c, temp_c = mean_mean_temp_c) |> 
@@ -546,3 +544,27 @@ temp_july_7d |>
     title = "max 7-day july air vs water temperatures"
   ) +
   theme_bw()
+
+state <- USAboundaries::us_states(states = "AK", resolution = "low") |> 
+  st_transform(crs = 3338)
+
+temp_july_sf <- temp_july |> 
+  select(station_id, year, temp_c = mean_mean_temp_c) |> 
+  filter(year >= 2012) |> 
+  left_join(
+    stn |> 
+      select(station_id, latitude, longitude),
+    by = "station_id"
+  ) |> 
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+state |> 
+  ggplot() +
+  geom_sf(fill = NA) +
+  geom_sf(
+    data = temp_july_sf,
+    aes(color = temp_c), size = 2
+  ) +
+  scale_color_viridis_c("mean july\nwater temp\n(degC)") +
+  facet_wrap(vars(year), ncol = 3) +
+  theme_void()
