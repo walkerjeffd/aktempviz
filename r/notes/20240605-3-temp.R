@@ -276,15 +276,18 @@ extract_daymet <- function (tile_id, year, latitude, longitude) {
 }
 possibly_extract_daymet <- possibly(extract_daymet, otherwise = NULL)
 
-daymet_stn_year_data <- daymet_stn_year |> 
-  left_join(
-    stn |> 
-      select(station_id, latitude, longitude),
-    by = "station_id"
-  ) |> 
-  mutate(
-    daymet = pmap(list(tile_id, year, latitude, longitude), possibly_extract_daymet, .progress = TRUE)
-  )
+# daymet_stn_year_data <- daymet_stn_year |> 
+#   left_join(
+#     stn |> 
+#       select(station_id, latitude, longitude),
+#     by = "station_id"
+#   ) |> 
+#   mutate(
+#     daymet = pmap(list(tile_id, year, latitude, longitude), possibly_extract_daymet, .progress = TRUE)
+#   )
+# daymet_stn_year_data |> 
+#   write_rds("data/daymet_stn_year_data.rds")
+daymet_stn_year_data <- read_rds("data/daymet_stn_year_data.rds")
 
 # re-download tiles that failed
 # daymet_stn_year_data |>
@@ -303,7 +306,6 @@ daymet_stn_year_data <- daymet_stn_year |>
 #       possibly_download_daymet_tile(tile_id, year, "tmin", force = TRUE)
 #     })
 #   )
-
 
 daymet_stn_year_data |> 
   select(station_id, daymet) |>
@@ -568,3 +570,33 @@ state |>
   scale_color_viridis_c("mean july\nwater temp\n(degC)") +
   facet_wrap(vars(year), ncol = 3) +
   theme_void()
+
+
+# export ------------------------------------------------------------------
+
+export_temp <- temp |> 
+  select(-data_week) |> 
+  unnest(data_day) |> 
+  select(station_id, date, temp_c = mean_temp_c, airtemp_c = mean_airtemp_c) |>
+  arrange(station_id, date) |> 
+  nest_by(station_id) |>
+  mutate(
+    start = min(data$date),
+    end = max(data$date),
+    n = sum(!is.na(data$temp_c)),
+    filename = {
+      f <- glue("{snakecase::to_snake_case(station_id)}.json")
+      write_json(data, file.path("../app/public/data/stations", f))
+      f
+    }
+  ) |> 
+  print()
+
+stn |> 
+  inner_join(
+    export_temp |> 
+      select(-data),
+    by = "station_id"
+  ) |> 
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326, remove = FALSE) |>
+  st_write("../app/public/data/stations.json", driver = "GeoJSON", delete_dsn = TRUE)
