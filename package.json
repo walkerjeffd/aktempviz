@@ -5,7 +5,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "lint": "eslint . --fix --ignore-path .gitignore"
+    "lint": "eslint . --fix --ignore-path .gitignore",
+    "deploy": "vite build && aws s3 sync dist/ s3://walkerenvres-apps-dev/aktempviz/ --delete"
   },
   "dependencies": {
     "@mdi/font": "7.4.47",
@@ -18,7 +19,7 @@
     "luxon": "^3.4.4",
     "roboto-fontface": "*",
     "vue": "^3.4.31",
-    "vuetify": "^3.6.11"
+    "vuetify": "^3.7.0"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.5",

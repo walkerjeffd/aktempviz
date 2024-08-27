@@ -586,17 +586,24 @@ export_temp <- temp |>
     n = sum(!is.na(data$temp_c)),
     filename = {
       f <- glue("{snakecase::to_snake_case(station_id)}.json")
-      write_json(data, file.path("../app/public/data/stations", f))
+      write_json(data, file.path("../public/data/stations", f))
       f
     }
   ) |> 
   print()
 
-stn |> 
+export_stn <- stn |> 
   inner_join(
     export_temp |> 
       select(-data),
     by = "station_id"
-  ) |> 
+  )
+
+# geojson
+export_stn |> 
   st_as_sf(coords = c("longitude", "latitude"), crs = 4326, remove = FALSE) |>
-  st_write("../app/public/data/stations.json", driver = "GeoJSON", delete_dsn = TRUE)
+  st_write("../public/data/stations.geojson", driver = "GeoJSON", delete_dsn = TRUE)
+
+# json
+export_stn |> 
+  write_json("../public/data/stations.json")

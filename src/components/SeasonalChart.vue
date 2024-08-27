@@ -123,6 +123,7 @@ const settings = {
   tooltip: {
     shared: false,
     useHTML: true,
+    distance: 32,
     formatter: function () {
       return tooltipFormatter(this.point)
     }
