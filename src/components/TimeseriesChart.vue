@@ -3,7 +3,6 @@
 </template>
 <script setup>
 import { onMounted, watch } from 'vue'
-import { tooltipFormatter } from '@/lib/utils'
 
 const props = defineProps(['series', 'loading'])
 const emit = defineEmits(['zoom'])
@@ -37,12 +36,15 @@ function update () {
   const chart = chartEl.value.chart
   if (!chart) return
 
+  window.chart = chart
+
   const nPrevious = chart.series.length
 
   const series = props.series.map(s => {
     return {
       ...s,
       name: s.station_id,
+      showInNavigator: true,
       data: s.data.map(d => ({
         ...d,
         x: d.millis,
@@ -51,6 +53,9 @@ function update () {
     }
   })
 
+  chart.update({
+    series: []
+  }, true, true)
   chart.update({
     series
   }, true, true)
@@ -61,16 +66,39 @@ function update () {
   }
 }
 
+function tooltipFormatter(date, points) {
+  console.log(date, points)
+  const rows = points.map(d => {
+    return `<tr class="mb-2">
+      <td style="color: ${d.point.color}; text-align: left;" class="pr-2">&#11044;</td>
+      <td style="text-wrap: wrap;"><b>${d.point.station_id}</b></td>
+      <td style="text-align: right;"><b>${d.point.temp_c?.toFixed(1)}</b></td>
+    </tr>`;
+  });
+
+  return `<div style="font-size: 14px; margin-bottom: 8px;"><b>${date}</b></div>
+    <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+      <thead>
+        <tr>
+          <th style="text-align: left; padding: 4px;" class="pl-2">&nbsp;</th>
+          <th style="text-align: start; padding: 4px;" class="pl-2">Station</th>
+          <th style="text-align: end; padding: 4px;" class="pl-2">Water Temp<br>(°C)</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows.join('')}
+      </tbody>
+    </table>`;
+}
+
+
 const settings = {
   chart: {
     height: 500,
     marginLeft: 70,
     zoomType: 'x',
-    // animation: false,
     boost: {
       enabled: false
-    },
-    events: {
     }
   },
   title: {
@@ -112,7 +140,8 @@ const settings = {
     shared: false,
     useHTML: true,
     formatter: function () {
-      return tooltipFormatter(this.point)
+      console.log(this)
+      return tooltipFormatter(this.point.date, this.points)
     }
   },
   scrollbar: {

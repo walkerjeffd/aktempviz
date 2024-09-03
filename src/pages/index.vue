@@ -5,7 +5,15 @@
         <v-card>
           <v-card-text>
             <div style="width:100%;height:500px">
-              <StationMap :stations="filteredStations" :selected="selectedStations" @select="selectStation"></StationMap>
+              <StationMap
+                :stations="filteredStations"
+                :selected="selectedStations"
+                :selected-basin="selectedBasin"
+                :basin-layer="selectedBasinLayer"
+                @select="selectStation"
+                @select-basin="selectBasin"
+              >
+              </StationMap>
             </div>
           </v-card-text>
 
@@ -26,7 +34,7 @@
               <v-btn
                 size="small"
                 variant="outlined"
-                :disabled="selectedStations.length === 0"
+                v-if="selectedStations.length > 0"
                 @click="clearSelection"
               >
                 Unselect All
@@ -56,7 +64,7 @@
               <v-menu v-model="showFilters" :close-on-content-click="false">
                 <template v-slot:activator="{ props }">
                   <v-btn
-                    :color="filtersEnabled ? 'primary' : 'default'"
+                    :color="filtersEnabled ? 'warning' : 'default'"
                     variant="outlined"
                     size="small"
                     v-bind="props"
@@ -65,26 +73,45 @@
                     Filters
                   </v-btn>
                 </template>
-                <v-sheet class="pa-4" style="width:300px">
-                  <div class="pt-4">
+                <v-sheet style="width:350px">
+                  <div class="pa-4 text-h6">Station Filters</div>
+
+                  <v-divider></v-divider>
+
+                  <div class="px-4 pt-4">
+                    <v-select
+                      v-model="selectedBasinLayer"
+                      :items="basinLayerOptions"
+                      item-title="label"
+                      item-value="value"
+                      label="Basins Layer"
+                      density="compact"
+                      variant="outlined"
+                      clearable
+                      hint="Only stations within a selected basin. Select a basin layer, then click a basin on the map."
+                      persistent-hint
+                      class="mb-4"
+                    ></v-select>
                     <v-text-field
                       v-model="filterBefore"
                       clearable
                       label="Observations Start Before"
+                      placeholder="YYYY-MM-DD"
                       variant="outlined"
                       density="compact"
                       persistent-hint
-                      hint="YYYY-MM-DD format"
+                      hint="Only stations with data stating before this date."
                       class="mb-4"
                     ></v-text-field>
                     <v-text-field
                       v-model="filterAfter"
                       clearable
                       label="Observations End After"
+                      placeholder="YYYY-MM-DD"
                       variant="outlined"
                       density="compact"
                       persistent-hint
-                      hint="YYYY-MM-DD format"
+                      hint="Only stations with data ending after this date."
                       class="mb-4"
                     ></v-text-field>
                     <v-text-field
@@ -95,17 +122,19 @@
                       density="compact"
                       type="number"
                       persistent-hint
-                      hint="Integer number"
+                      hint="Only stations with at least this many daily values."
+                      class="mb-4"
                     ></v-text-field>
-                    <v-checkbox v-model="filterSelected" label="Selected Stations Only" hide-details></v-checkbox>
                   </div>
 
-                  <div class="d-flex">
-                    <v-btn variant="outlined" @click="showFilters = false" class="mt-4">
+                  <v-divider></v-divider>
+
+                  <div class="d-flex pa-4">
+                    <v-btn variant="outlined" aria-label="Close station filters" @click="showFilters = false">
                       <v-icon left>mdi-close</v-icon> Close
                     </v-btn>
                     <v-spacer></v-spacer>
-                    <v-btn variant="outlined" color="error" @click="resetFilters" class="mt-4">
+                    <v-btn variant="outlined" color="error" aria-label="Reset station filters" @click="resetFilters">
                       <v-icon left>mdi-refresh</v-icon> Reset
                     </v-btn>
                   </div>
@@ -128,7 +157,11 @@
             return-object
             width="100%"
           >
-            <template v-slot:header.data-table-select></template>
+            <template v-slot:header.data-table-select>
+              <v-checkbox-btn
+                v-model="filterSelected"
+              ></v-checkbox-btn>
+            </template>
             <template v-slot:item.start="{ item }">{{ item.start.substr(0, 4) }}</template>
             <template v-slot:item.end="{ item }">{{ item.end.substr(0, 4) }}</template>
             <template v-slot:item.n="{ item }">{{ item.n.toLocaleString() }}</template>
@@ -153,14 +186,14 @@
         </v-row>
 
         <v-row>
-          <v-col cols="6">
+          <v-col cols="12" md="6">
             <v-card>
               <v-card-text>
                 <SeasonalChart :series="filteredSeries" :loading="loading" />
               </v-card-text>
             </v-card>
           </v-col>
-          <v-col cols="6">
+          <v-col cols="12" md="6">
             <v-card>
               <v-card-text>
                 <ScatterChart :series="filteredSeries" :loading="loading" />
@@ -176,7 +209,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { schemeSet1 } from 'd3-scale-chromatic'
-import { DateTime } from 'luxon'
+import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
 
 import StationMap from '@/components/StationMap'
 import TimeseriesChart from '@/components/TimeseriesChart'
@@ -185,6 +218,7 @@ import ScatterChart from '@/components/ScatterChart'
 
 const stations = ref([])
 const selectedStations = ref([])
+const selectedBasin = ref(null)
 const timeRange = ref(null)
 const loading = ref(false)
 
@@ -196,8 +230,24 @@ const filterAfter = ref('')
 const filterBefore = ref('')
 const filterCount = ref(null)
 
+const basinLayerOptions = ref([
+  {
+    value: 'huc4',
+    label: 'Large Basins (HUC4)'
+  },
+  {
+    value: 'huc6',
+    label: 'Medium Basins (HUC6)'
+  },
+  {
+    value: 'huc8',
+    label: 'Small Basins (HUC8)'
+  }
+])
+const selectedBasinLayer = ref(basinLayerOptions[0])
+
 const filtersEnabled = computed(() => {
-  return filterStationId.value || filterSelected.value || filterAfter.value || filterBefore.value || filterCount.value
+  return (selectedBasinLayer.value && selectedBasin.value) || filterStationId.value || filterSelected.value || filterAfter.value || filterBefore.value || filterCount.value
 })
 
 function resetFilters () {
@@ -205,6 +255,8 @@ function resetFilters () {
   filterAfter.value = ''
   filterBefore.value = ''
   filterCount.value = null
+  selectedBasinLayer.value = null
+  selectedBasin.value = null
 }
 
 function clearSelection () {
@@ -212,7 +264,7 @@ function clearSelection () {
     d.isSelected = false
   })
   selectedStations.value.length = 0
-  colors = schemeSet1.slice()
+  colors = defaultColors.slice()
 }
 
 const headers = [
@@ -238,15 +290,29 @@ const headers = [
     width: '20px'
   },
   {
-    title: 'Count',
+    title: '# Days',
     sortable: true,
     align: 'end',
     value: 'n',
-    width: '10px'
+    width: '100px'
    }
 ]
 
-let colors = schemeSet1.slice()
+// const defaultColors = [
+//   '#2E5DAB',
+// 	'#D84727',
+// 	'#EFC12F',
+// 	'#78909C',
+// 	'#7B519D'
+// ]
+const defaultColors = [
+  '#1b9e77',
+  '#d95f02',
+  '#7570b3',
+  '#e7298a',
+  '#66a61e'
+]
+let colors = defaultColors.slice()
 
 onMounted(async () => {
   stations.value = await fetchStations()
@@ -264,6 +330,14 @@ async function selectStation (station) {
     station.color = colors.shift()
     selectedStations.value.push(station)
   }
+}
+
+async function selectBasin (basin) {
+  if (!basin || basin.id === selectedBasin.value?.id) {
+    selectedBasin.value = null
+    return
+  }
+  selectedBasin.value = basin
 }
 
 const series = computed(() => {
@@ -286,11 +360,12 @@ const series = computed(() => {
 
 const filteredStations = computed(() => {
   return stations.value.filter(station => {
-    return (!filterStationId.value || station.station_id.toLowerCase().includes(filterStationId.value.toLowerCase())) &&
-      (!filterSelected.value || station.isSelected) &&
+    return (!filterSelected.value || station.isSelected) &&
+      (!filterStationId.value || station.station_id.toLowerCase().includes(filterStationId.value.toLowerCase())) &&
       (!filterBefore.value || station.start <= filterBefore.value) &&
       (!filterAfter.value || station.end >= filterAfter.value) &&
-      (!filterCount.value || station.n >= parseInt(filterCount.value, 10))
+      (!filterCount.value || station.n >= parseInt(filterCount.value, 10)) &&
+      (!selectedBasin.value || booleanPointInPolygon([station.longitude, station.latitude], selectedBasin.value))
   })
 })
 

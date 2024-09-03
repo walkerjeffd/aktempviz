@@ -606,4 +606,4 @@ export_stn |>
 
 # json
 export_stn |> 
-  write_json("../public/data/stations.json")
+  write_json("../public/data/stations.json", digits = 8)

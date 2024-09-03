@@ -27,15 +27,17 @@
       </div>
     </LControl>
     <LTileLayer
-        v-for="tile in basemaps"
-        :key="tile.name"
-        :name="tile.name"
-        :visible="tile.visible"
-        :url="tile.url"
-        :attribution="tile.attribution"
-        :options="tile.options"
-        layer-type="base"
-      ></LTileLayer>
+      v-for="tile in basemaps"
+      :key="tile.name"
+      :name="tile.name"
+      :visible="tile.visible"
+      :url="tile.url"
+      :attribution="tile.attribution"
+      :options="tile.options"
+      :opacity="0.5"
+      layer-type="base"
+    ></LTileLayer>
+
     <LCircleMarker
       v-for="station in props.stations"
       :key="station.station_id"
@@ -43,16 +45,16 @@
       :color="datasetColors[station.dataset]"
       :fill-color="datasetColors[station.dataset]"
       :radius="8"
-      :weight="2"
+      :weight="props.selected.length > 0 ? 1 : 1"
       :fill-opacity="0.25"
-      :opacity="props.selected.length > 0 ? 0.25 : 1"
+      pane="markerPane"
+      :opacity="props.selected.length > 0 ? 0.5 : 1"
       @click="emit('select', station)"
     >
       <LTooltip>
         <div>
-          <div class="text-body-1 font-weight-bold" style="max-width:300px; text-wrap:wrap;">{{ station.station_id }}</div>
-          <div class="text-body-2"><i>Period</i>: {{ station.start }} to {{ station.end }}</div>
-          <div class="text-body-2"><i>Count</i>: {{ station.n.toLocaleString() }}</div>
+          <div class="text-body-1 font-weight-bold" style="max-width:400px; text-wrap:wrap;">{{ station.station_id }}</div>
+          <div>{{ station.start }} to {{ station.end }}<br>{{ station.n.toLocaleString() }} daily values</div>
         </div>
       </LTooltip>
     </LCircleMarker>
@@ -63,22 +65,40 @@
       :radius="10"
       :weight="5"
       :color="station.color"
+      pane="markerPane"
       @click="emit('select', station)"
     >
       <LTooltip>
         <div>
           <div class="text-body-1 font-weight-bold" style="max-width:300px; text-wrap:wrap;">{{ station.station_id }}</div>
-          <div class="text-body-2"><i>Period</i>: {{ station.start }} to {{ station.end }}</div>
-          <div class="text-body-2"><i>Count</i>: {{ station.n.toLocaleString() }}</div>
+          <div>{{ station.start }} to {{ station.end }}<br>{{ station.n.toLocaleString() }} daily values</div>
         </div>
       </LTooltip>
     </LCircleMarker>
+
+    <LGeoJson
+      v-if="basinGeoJson && basinGeoJson.visible && basinGeoJson.data"
+      ref="basinRef"
+      :geojson="basinGeoJson.data"
+      :options="basinGeoJson.options"
+      :options-style="basinGeoJson.style"
+      pane="overlayPane"
+      @click="clickBasinLayer"
+    />
+    <LGeoJson
+      v-if="basinGeoJson.visible && props.selectedBasin"
+      :geojson="props.selectedBasin"
+      :options="selectedBasinOptions"
+      :options-style="selectedBasinStyle"
+      pane="overlayPane"
+      @click="clickBasinLayer"
+    />
   </LMap>
 </template>
 
 <script setup>
 import { ref } from 'vue'
-import { LMap, LTileLayer, LCircleMarker, LControlLayers, LControl, LTooltip } from '@vue-leaflet/vue-leaflet'
+import { LMap, LTileLayer, LCircleMarker, LGeoJson, LControlLayers, LControl, LTooltip } from '@vue-leaflet/vue-leaflet'
 
 import { basemaps } from '@/lib/basemaps'
 
@@ -90,16 +110,107 @@ const props = defineProps({
   selected: {
     type: Array,
     default: () => []
+  },
+  basinLayer: {
+    type: String,
+    default: null
+  },
+  selectedBasin: {
+    type: Object,
+    default: null
   }
 })
-const emit = defineEmits(['select'])
+const emit = defineEmits(['select', 'select-basin'])
 
 const map = ref(null)
+const basinRef = ref(null)
 
 const datasetColors = {
   'AKTEMP': '#4075b0',
   'NPS': '#ee8830',
   'USGS': '#509e3d'
+}
+
+watch(() => props.basinLayer, loadBasinLayer, { immediate: true })
+
+const basinGeoJson = ref({
+  data: null,
+  options: null,
+  style: null,
+  loading: false
+})
+
+const selectedBasinOptions = {
+  onEachFeature (feature, layer) {
+    layer.bindTooltip(
+      basinTooltipContent(feature),
+      { permanent: false, sticky: true }
+    )
+  }
+}
+
+const selectedBasinStyle = () => {
+  return {
+    weight: 2,
+    color: 'orangered',
+    opacity: 1,
+    fillOpacity: 0
+  }
+}
+
+function basinTooltipContent (feature) {
+  return `<span class="text-body-1 font-weight-bold">${feature.properties.name}</span><br>HUC: ${feature.id}`
+}
+
+async function loadBasinLayer (basinLayer) {
+  if (!basinLayer) {
+    // basinGeoJson.value.visible = false
+    emit('select-basin')
+    return
+  }
+  basinGeoJson.value.loading = true
+  emit('select-basin')
+  const response = await fetch(`data/gis/wbd_${basinLayer}.geojson`)
+  const data = await response.json()
+  basinGeoJson.value.data = data
+  basinGeoJson.value.options = {
+    onEachFeature: (feature, layer) => {
+      layer.bindTooltip(
+        basinTooltipContent(feature),
+        { permanent: false, sticky: true }
+      )
+      layer.on({
+        mousemove: (evt) => {
+          evt.target.setStyle({
+            weight: 3,
+            color: 'black'
+          })
+        },
+        mouseout: (evt) => {
+          evt.target.setStyle({
+            weight: 2,
+            color: '#777',
+          })
+        }
+      })
+    }
+  }
+  basinGeoJson.value.style = () => {
+    return {
+      weight: 2,
+      color: '#777',
+      opacity: 1,
+      fillOpacity: 0
+    }
+  }
+  basinGeoJson.value.visible = true
+  basinGeoJson.value.loading = false
+}
+
+function clickBasinLayer (evt) {
+  const feature = evt.layer.feature
+  evt.layer.bringToFront()
+  emit('select-basin', feature)
 }
 
 </script>

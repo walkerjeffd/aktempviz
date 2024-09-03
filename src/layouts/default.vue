@@ -1,7 +1,7 @@
 <template>
   <v-app>
-    <v-app-bar>
-      <v-app-bar-title>AKTEMPVIZ</v-app-bar-title>
+    <v-app-bar color="#00583D">
+      <v-app-bar-title>Alaska Water Temperature Trends & Dynamics Explorer</v-app-bar-title>
     </v-app-bar>
     <v-main>
       <router-view />
