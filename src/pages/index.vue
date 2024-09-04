@@ -19,26 +19,36 @@
 
           <v-divider></v-divider>
 
-          <div class="d-flex align-center py-4 pr-4">
-            <div class="px-4 text-overline font-weight-bold">
-              <span v-if="selectedStations.length > 0">
-                {{ selectedStations.length }} station<span v-if="selectedStations.length > 1">s</span> selected
-              </span>
-              <span v-else class="text-primary">
-                Select a station on the map or table below.
-              </span>
+          <div class="pa-4">
+            <div
+              v-if="selectedStations.length === 0"
+              class="text-overline text-primary font-weight-bold"
+            >
+              Select a station on the map or table below.
             </div>
 
-            <v-spacer></v-spacer>
-            <div>
-              <v-btn
-                size="small"
-                variant="outlined"
-                v-if="selectedStations.length > 0"
-                @click="clearSelection"
-              >
-                Unselect All
-              </v-btn>
+            <div v-else>
+              <div class="d-flex align-center mb-2">
+                <div class="text-overline text-primary font-weight-bold">
+                  Selected Stations
+                </div>
+                <v-spacer></v-spacer>
+                <v-btn size="small" variant="outlined" v-if="selectedStations.length > 0" @click="clearSelection">
+                  Unselect All
+                </v-btn>
+              </div>
+              <div class="d-flex flex-wrap">
+                <v-chip
+                  v-for="station in selectedStations"
+                  :key="station.station_id"
+                  class="mr-1 mb-1"
+                  :color="station.color"
+                  closable
+                  @click:close="selectStation(station)"
+                >
+                  {{ station.station_id }}
+                </v-chip>
+              </div>
             </div>
           </div>
 
