@@ -34,6 +34,7 @@
                 </div>
                 <v-spacer></v-spacer>
                 <v-btn size="small" variant="outlined" v-if="selectedStations.length > 0" @click="clearSelection">
+                  <v-icon left>mdi-close</v-icon>
                   Unselect All
                 </v-btn>
               </div>
@@ -135,6 +136,11 @@
                       hint="Only stations with at least this many daily values."
                       class="mb-4"
                     ></v-text-field>
+                    <v-checkbox
+                      v-model="filterSelected"
+                      label="Show Selected Only"
+                      hide-details
+                    ></v-checkbox>
                   </div>
 
                   <v-divider></v-divider>
@@ -179,11 +185,7 @@
             return-object
             width="100%"
           >
-            <template v-slot:header.data-table-select>
-              <v-checkbox-btn
-                v-model="filterSelected"
-              ></v-checkbox-btn>
-            </template>
+            <template v-slot:header.data-table-select></template>
             <template v-slot:item.start="{ item }">{{ item.start.substr(0, 4) }}</template>
             <template v-slot:item.end="{ item }">{{ item.end.substr(0, 4) }}</template>
             <template v-slot:item.n="{ item }">{{ item.n.toLocaleString() }}</template>
@@ -304,6 +306,14 @@ const activeFilters = computed(() => {
       type: 'count',
       label: '# Days >= ',
       value: filterCount.value
+    })
+  }
+
+  if (filterSelected.value) {
+    filters.push({
+      type: 'selected',
+      label: 'Selected Stations Only',
+      value: ''
     })
   }
 
@@ -486,14 +496,5 @@ async function fetchData (station) {
   loading.value = false
   return json
 }
-
-watch(
-  [selectedStations, filterSelected],
-  ([newSelectedStations, newFilterSelected]) => {
-    if (newFilterSelected && newSelectedStations.length === 0) {
-      filterSelected.value = false;
-    }
-  }
-)
 
 </script>
