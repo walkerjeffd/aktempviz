@@ -67,30 +67,30 @@ function update () {
 }
 
 function tooltipFormatter(date, points) {
-  console.log(date, points)
-  const rows = points.map(d => {
-    return `<tr class="mb-2">
-      <td style="color: ${d.point.color}; text-align: left;" class="pr-2">&#11044;</td>
-      <td style="text-wrap: wrap;"><b>${d.point.station_id}</b></td>
-      <td style="text-align: right;"><b>${d.point.temp_c?.toFixed(1)}</b></td>
-    </tr>`;
-  });
+  const rows = points.map(d => `
+    <tr>
+      <td style="color: ${d.point.color}; padding-right: 10px; font-size: 18px;">&#9679;</td>
+      <td style="font-weight: bold; padding-right: 12px;">${d.point.station_id}</td>
+      <td style="text-align: right; font-weight: bold;">${d.point.temp_c?.toFixed(1)}</td>
+    </tr>
+  `).join('');
 
-  return `<div style="font-size: 14px; margin-bottom: 8px;"><b>${date}</b></div>
-    <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
-      <thead>
-        <tr>
-          <th style="text-align: left; padding: 4px;" class="pl-2">&nbsp;</th>
-          <th style="text-align: start; padding: 4px;" class="pl-2">Station</th>
-          <th style="text-align: end; padding: 4px;" class="pl-2">Water Temp<br>(°C)</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${rows.join('')}
-      </tbody>
-    </table>`;
+  return `
+    <div style="">
+      <div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; color: #333;">${new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+      <table style="border-collapse: separate; border-spacing: 0 6px; font-size: 14px;">
+        <thead>
+          <tr>
+            <th></th>
+            <th style="text-align: left; color: #666; font-weight: normal;">Station</th>
+            <th style="text-align: left; color: #666; font-weight: normal;">Water Temp (°C)</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+  `;
 }
-
 
 const settings = {
   chart: {
@@ -140,7 +140,6 @@ const settings = {
     shared: false,
     useHTML: true,
     formatter: function () {
-      console.log(this)
       return tooltipFormatter(this.point.date, this.points)
     }
   },

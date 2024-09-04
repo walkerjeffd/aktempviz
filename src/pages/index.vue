@@ -143,6 +143,18 @@
             </div>
           </div>
 
+          <div class="d-flex flex-wrap pa-2">
+            <v-chip
+              v-for="filter in activeFilters"
+              :key="filter.type"
+              class="ma-1"
+              closable
+              @click:close="removeFilter(filter.type)"
+            >
+              {{ filter.label }}&nbsp;<b>{{ filter.value }}</b>
+            </v-chip>
+          </div>
+
           <v-data-table
             v-model="selectedStations"
             :headers="headers"
@@ -207,7 +219,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { schemeSet1 } from 'd3-scale-chromatic'
 import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
 
@@ -244,11 +256,73 @@ const basinLayerOptions = ref([
     label: 'Small Basins (HUC8)'
   }
 ])
-const selectedBasinLayer = ref(basinLayerOptions[0])
+const selectedBasinLayer = ref(null)
 
 const filtersEnabled = computed(() => {
-  return (selectedBasinLayer.value && selectedBasin.value) || filterStationId.value || filterSelected.value || filterAfter.value || filterBefore.value || filterCount.value
+  return (selectedBasinLayer.value && selectedBasin.value) || filterAfter.value || filterBefore.value || filterCount.value
 })
+
+const activeFilters = computed(() => {
+  const filters = []
+
+  if (selectedBasinLayer.value && selectedBasin.value) {
+    filters.push({
+      type: 'basin',
+      label: 'Basin: ',
+      value: `${selectedBasin.value.properties.name} (${selectedBasin.value.id})`
+    })
+  }
+
+  if (filterAfter.value) {
+    filters.push({
+      type: 'after',
+      label: 'End >= ',
+      value: filterAfter.value
+    })
+  }
+
+  if (filterBefore.value) {
+    filters.push({
+      type: 'before',
+      label: 'Start <=',
+      value: filterBefore.value
+    })
+  }
+
+  if (filterCount.value) {
+    filters.push({
+      type: 'count',
+      label: '# Days >= ',
+      value: filterCount.value
+    })
+  }
+
+  return filters
+})
+
+function removeFilter(filterType) {
+  switch (filterType) {
+    case 'basin':
+      // selectedBasinLayer.value = null
+      selectedBasin.value = null
+      break
+    case 'stationId':
+      filterStationId.value = ''
+      break
+    case 'selected':
+      filterSelected.value = false
+      break
+    case 'after':
+      filterAfter.value = ''
+      break
+    case 'before':
+      filterBefore.value = ''
+      break
+    case 'count':
+      filterCount.value = null
+      break
+  }
+}
 
 function resetFilters () {
   filterSelected.value = false
@@ -319,6 +393,7 @@ onMounted(async () => {
 })
 
 async function selectStation (station) {
+  console.log('selectStation', station)
   if (selectedStations.value.some(d => d.station_id === station.station_id)) {
     colors.unshift(station.color)
     station.isSelected = false
@@ -401,5 +476,14 @@ async function fetchData (station) {
   loading.value = false
   return json
 }
+
+watch(
+  [selectedStations, filterSelected],
+  ([newSelectedStations, newFilterSelected]) => {
+    if (newFilterSelected && newSelectedStations.length === 0) {
+      filterSelected.value = false;
+    }
+  }
+)
 
 </script>
