@@ -1,5 +1,7 @@
 # AKTEMP dataset
 
+# TODO: add waterbody_name and url to stations
+
 library(tidyverse)
 library(janitor)
 library(jsonlite)
@@ -224,18 +226,23 @@ stn_daily <- stn_data |>
 # export ------------------------------------------------------------------
 
 out <- stn |> 
-  select(
-    station_id,
-    provider_code, provider_name,
-    station_code, station_description,
-    latitude, longitude
+  mutate(
+    url = glue("https://aktemp.uaa.alaska.edu/#/explorer/stations/{station_id}"),
   ) |> 
   inner_join(
     stn_daily,
     by = c("station_id")
   ) |> 
-  mutate(
-    station_id = glue("AKTEMP:{station_id}")
+  transmute(
+    provider_station_code = glue("{provider_code}:{station_code}"),
+    station_id = as.character(station_id),
+    station_code,
+    station_description,
+    waterbody_name,
+    latitude, longitude,
+    provider_code,
+    provider_name,
+    url,
+    data = daily
   )
-
 write_rds(out, "data/aktemp.rds")

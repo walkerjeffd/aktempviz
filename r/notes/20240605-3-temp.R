@@ -10,64 +10,21 @@ library(httr2)
 
 # load --------------------------------------------------------------------
 
-aktemp <- read_rds("data/aktemp.rds") |> 
-  mutate(
-    station_id = glue("AKTEMP:{provider_code}:{station_code}")
-  )
-usgs <- read_rds("data/usgs.rds") |> 
-  rowwise() |> 
-  mutate(
-    station_id = glue("USGS:{station_id}"),
-    daily = list({
-      data |> 
-        filter(!is.na(temp_c)) |>
-        group_by(date = as_date(datetime)) |> 
-        summarise(
-          min_temp_c = min(temp_c),
-          mean_temp_c = mean(temp_c),
-          max_temp_c = max(temp_c)
-        )
-    })
-  )
-nps <- read_rds("data/nps.rds") |> 
-  select(-data_inst) |> 
-  rowwise() |> 
-  mutate(
-    data_daily = list({
-      data_daily |> 
-        select(-n_values)
-    })
-  )
+aktemp <- read_rds("data/aktemp.rds")
+usgs <- read_rds("data/usgs.rds")
+nps <- read_rds("data/nps.rds")
 
+datasets <- bind_rows(
+  AKTEMP = aktemp,
+  USGS = usgs,
+  NPS = nps,
+  .id = "dataset"
+)
 
 # stations ----------------------------------------------------------------
 
-aktemp_stn <- aktemp |> 
-  select(
-    station_id,
-    description = station_description,
-    latitude, longitude
-  )
-usgs_stn <- usgs |> 
-  select(
-    station_id,
-    description = name,
-    latitude, longitude
-  )
-nps_stn <- nps |> 
-  ungroup() |> 
-  transmute(
-    station_id,
-    description,
-    latitude, longitude
-  )
-
-stn <- bind_rows(
-  AKTEMP = aktemp_stn,
-  USGS = usgs_stn,
-  NPS = nps_stn,
-  .id = "dataset"
-)
+stn <- datasets |> 
+  select(-data)
 
 tabyl(stn, dataset)
 stn |>
@@ -77,22 +34,8 @@ stn |>
 
 # daily data --------------------------------------------------------------
 
-aktemp_data <- aktemp |> 
-  select(station_id, data = daily) |> 
-  ungroup()
-usgs_data <- usgs |> 
-  select(station_id, data = daily) |> 
-  ungroup()
-nps_data <- nps |> 
-  select(station_id, data = data_daily) |> 
-  ungroup()
-
-temp_data <- bind_rows(
-  AKTEMP = aktemp_data,
-  USGS = usgs_data,
-  NPS = nps_data,
-  .id = "dataset"
-) |> 
+temp_data <- datasets |> 
+  select(dataset, station_id, data) |>
   rowwise() |> 
   mutate(
     n_values = nrow(data),
@@ -121,7 +64,6 @@ temp_data |>
   scale_x_date(date_breaks = "2 months", date_labels = "%b %d", expand = expansion()) +
   scale_color_brewer(palette = "Set1") +
   labs(x = "day of year", y = "# daily values") +
-  # facet_wrap(vars(dataset), ncol = 1) +
   theme_bw()
 
 temp_data |> 
@@ -134,7 +76,6 @@ temp_data |>
   scale_fill_brewer(palette = "Set1") +
   scale_x_continuous(expand = expansion(), breaks = scales::pretty_breaks(n = 10)) +
   labs(x = "year", y = "# daily values") +
-  # facet_wrap(vars(dataset), ncol = 1) +
   theme_bw()
 
 temp_data |> 
@@ -151,7 +92,7 @@ temp_data |>
 # group by station, year
 #   calculate % of days between June 1 and Sep 30 with data
 
-MIN_FRAC_SUMMER <- 0.75
+# MIN_FRAC_SUMMER <- 0.75
 max_n_summer <- length(seq.Date(ymd(20010601), ymd(20010930), by = 1))
 
 temp_data_year <- temp_data |> 
@@ -172,15 +113,12 @@ temp_data_year |>
   ggplot(aes(frac_summer)) +
   stat_ecdf()
 
-# station/years with minimum summer data
-temp_data_summer <- temp_data_year |> 
-  filter(frac_summer >= MIN_FRAC_SUMMER)
 
 # daymet ------------------------------------------------------------------
 
 daymet_stn_year <- stn |>
   select(station_id, latitude, longitude) |> 
-  semi_join(temp_data_summer, by = "station_id") |> 
+  semi_join(temp_data_year, by = "station_id") |> 
   st_as_sf(coords = c("longitude", "latitude"), crs = 4326) |> 
   st_join(
     daymetr::tile_outlines |> 
@@ -401,12 +339,23 @@ temp <- temp_data_summer |>
   rowwise() |> 
   mutate(
     data_day = list({
-      data |> 
-        complete(date = seq.Date(min(date), max(date), by = "day")) |>
-        left_join(
-          daymet,
-          by = "date"
-        )
+      x <- data |> 
+        complete(date = seq.Date(min(date), max(date), by = "day")) 
+      if (!is.null(daymet)) {
+        x <- x |>
+          left_join(
+            daymet,
+            by = "date"
+          )
+      } else {
+        x <- x |> 
+          mutate(
+            min_airtemp_c = NA_real_,
+            max_airtemp_c = NA_real_,
+            mean_airtemp_c = NA_real_
+          )
+      }
+      x
     }),
     data_week = list({
       data_day |> 
