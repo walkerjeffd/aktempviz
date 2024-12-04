@@ -117,8 +117,8 @@ temp_data_year |>
 # daymet ------------------------------------------------------------------
 
 daymet_stn_year <- stn |>
-  select(station_id, latitude, longitude) |> 
-  semi_join(temp_data_year, by = "station_id") |> 
+  select(dataset, station_id, latitude, longitude) |> 
+  semi_join(temp_data_year, by = c("dataset", "station_id")) |> 
   st_as_sf(coords = c("longitude", "latitude"), crs = 4326) |> 
   st_join(
     daymetr::tile_outlines |> 
@@ -127,10 +127,11 @@ daymet_stn_year <- stn |>
   st_drop_geometry() |> 
   clean_names() |> 
   inner_join(
-    temp_data_summer |> 
-      distinct(station_id, year),
-    by = "station_id"
-  )
+    temp_data_year |> 
+      distinct(dataset, station_id, year),
+    by = c("dataset", "station_id")
+  ) |> 
+  filter(year < 2024)
 
 daymet_tile_year <- daymet_stn_year |> 
   distinct(tile_id, year) |> 
@@ -168,7 +169,7 @@ daymet_tile_year |>
   )
 
 # convert nc to tif
-daymetr::nc2tif("data/daymet")
+daymetr::nc2tif("/mnt/data/ecosheds/aktempviz/daymet/")
 
 # tif_file <- "data/daymet/tmax_2002_13330.tif"
 # r <- terra::rast(tif_file)
@@ -214,39 +215,40 @@ extract_daymet <- function (tile_id, year, latitude, longitude) {
 }
 possibly_extract_daymet <- possibly(extract_daymet, otherwise = NULL)
 
-# daymet_stn_year_data <- daymet_stn_year |> 
-#   left_join(
-#     stn |> 
-#       select(station_id, latitude, longitude),
-#     by = "station_id"
-#   ) |> 
-#   mutate(
-#     daymet = pmap(list(tile_id, year, latitude, longitude), possibly_extract_daymet, .progress = TRUE)
-#   )
-# daymet_stn_year_data |> 
-#   write_rds("data/daymet_stn_year_data.rds")
+daymet_stn_year_data <- daymet_stn_year |>
+  left_join(
+    stn |>
+      select(dataset, station_id, latitude, longitude),
+    by = c("dataset", "station_id")
+  ) |>
+  mutate(
+    daymet = pmap(list(tile_id, year, latitude, longitude), possibly_extract_daymet, .progress = TRUE)
+  )
+daymet_stn_year_data |>
+  write_rds("data/daymet_stn_year_data.rds")
 daymet_stn_year_data <- read_rds("data/daymet_stn_year_data.rds")
 
 # re-download tiles that failed
-# daymet_stn_year_data |>
-#   mutate(
-#     error = map_lgl(daymet, is.null)
-#   ) |> 
-#   filter(error) |> 
-#   distinct(tile_id, year) |> 
-#   rowwise() |> 
-#   mutate(
-#     filename = list({
-#       unlink(file.path("data/daymet", glue("tmax_{year}_{tile_id}.tif")))
-#       unlink(file.path("data/daymet", glue("tmax_{year}_{tile_id}.tif.aux.json")))
-#       unlink(file.path("data/daymet", glue("tmin_{year}_{tile_id}.tif")))
-#       unlink(file.path("data/daymet", glue("tmin_{year}_{tile_id}.tif.aux.json")))
-#       possibly_download_daymet_tile(tile_id, year, "tmin", force = TRUE)
-#     })
-#   )
+daymet_stn_year_data |>
+  mutate(
+    error = map_lgl(daymet, is.null)
+  ) |>
+  filter(error) |>
+  distinct(tile_id, year) |>
+  rowwise() |>
+  mutate(
+    filename = list({
+      unlink(file.path("data/daymet", glue("tmax_{year}_{tile_id}.tif")))
+      unlink(file.path("data/daymet", glue("tmax_{year}_{tile_id}.tif.aux.json")))
+      unlink(file.path("data/daymet", glue("tmin_{year}_{tile_id}.tif")))
+      unlink(file.path("data/daymet", glue("tmin_{year}_{tile_id}.tif.aux.json")))
+      possibly_download_daymet_tile(tile_id, year, "tmin", force = TRUE)
+      possibly_download_daymet_tile(tile_id, year, "tmax", force = TRUE)
+    })
+  )
 
 daymet_stn_year_data |> 
-  select(station_id, daymet) |>
+  select(dataset, station_id, daymet) |>
   unnest(daymet) |> 
   pivot_longer(ends_with("_c")) |> 
   ggplot(aes(yday(date), value)) +
@@ -324,17 +326,17 @@ daymet_stn_year_data |>
 
 # merge -------------------------------------------------------------------
 
-temp_data_summer |> 
+temp_data_year |> 
   tabyl(year, dataset) |>
   adorn_totals(where = "both") |> 
   knitr::kable()
 
-temp <- temp_data_summer |> 
-  select(station_id, year, data) |> 
+temp <- temp_data_year |> 
+  select(dataset, station_id, year, data) |> 
   left_join(
     daymet_stn_year_data |> 
-      select(station_id, year, daymet),
-    by = c("station_id", "year")
+      select(dataset, station_id, year, daymet),
+    by = c("dataset", "station_id", "year")
   ) |> 
   rowwise() |> 
   mutate(
@@ -356,196 +358,195 @@ temp <- temp_data_summer |>
           )
       }
       x
-    }),
-    data_week = list({
-      data_day |> 
-        select(date, mean_temp_c, mean_airtemp_c) |> 
-        group_by(week = week(date)) |>
-        summarise(
-          n_days = n(),
-          mean_temp_c = mean(mean_temp_c),
-          mean_airtemp_c = mean(mean_airtemp_c),
-          .groups = "drop"
-        ) |>
-        mutate(
-          date = ymd(str_c(year, "0101")) + days(7 * (week - 1)),
-          .before = everything()
-        ) |>
-        filter(n_days == 7, !is.na(mean_temp_c), !is.na(mean_airtemp_c)) |> 
-        select(-n_days)
     })
+    # data_week = list({
+    #   data_day |> 
+    #     select(date, mean_temp_c, mean_airtemp_c) |> 
+    #     group_by(week = week(date)) |>
+    #     summarise(
+    #       n_days = n(),
+    #       mean_temp_c = mean(mean_temp_c),
+    #       mean_airtemp_c = mean(mean_airtemp_c),
+    #       .groups = "drop"
+    #     ) |>
+    #     mutate(
+    #       date = ymd(str_c(year, "0101")) + days(7 * (week - 1)),
+    #       .before = everything()
+    #     ) |>
+    #     filter(n_days == 7, !is.na(mean_temp_c), !is.na(mean_airtemp_c)) |> 
+    #     select(-n_days)
+    # })
   ) |> 
   select(-data, -daymet) |> 
   print()
 
-temp |> 
-  select(-data_day) |> 
-  unnest(data_week) |> 
-  ggplot(aes(date, mean_temp_c)) +
-  geom_hex(bins = 100) +
-  scale_fill_viridis_c(trans = "log10") +
-  scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
-  labs(x = "date", y = "weekly mean water temp (degC)") +
-  theme_bw()
-
-temp |> 
-  select(-data_day) |> 
-  unnest(data_week) |> 
-  ggplot(aes(ymd(20001231) + days(yday(date)), mean_temp_c)) +
-  geom_hex(bins = 50) +
-  scale_x_date(date_labels = "%b %d") +
-  scale_fill_viridis_c("count", trans = "log10") +
-  labs(x = "day of year", y = "weekly mean water temp (degC)") +
-  theme_bw()
-
-temp |> 
-  select(-data_day) |> 
-  unnest(data_week) |> 
-  filter(mean_airtemp_c > -10) |> 
-  ggplot(aes(mean_airtemp_c, mean_temp_c)) +
-  geom_hex(bins = 100) +
-  geom_hline(yintercept = 0, alpha = 0.5) +
-  geom_vline(xintercept = 0, alpha = 0.5) +
-  scale_fill_viridis_c("count", trans = "log10") +
-  labs(x = "weekly mean air temp (degC)", y = "weekly mean water temp (degC)") +
-  theme_bw()
-
-temp_july <- temp |> 
-  select(-data_week) |> 
-  unnest(data_day) |> 
-  filter(month(date) == 7, !is.na(mean_temp_c)) |> 
-  group_by(station_id, year) |> 
-  summarise(
-    n = n(),
-    across(starts_with("mean_"), \(x) max(x, na.rm = TRUE), .names = "max_{.col}"),
-    across(starts_with("mean_"), \(x) mean(x, na.rm = TRUE), .names = "mean_{.col}"),
-    .groups = "drop"
-  ) |> 
-  filter(n == 31)
-
-temp_july_7d <- temp |>
-  select(-data_week) |> 
-  unnest(data_day) |> 
-  filter(month(date) == 7, !is.na(mean_temp_c)) |> 
-  add_count(station_id, year, name = "n_day") |> 
-  filter(n_day == 31) |>
-  select(-n_day) |> 
-  arrange(station_id, date) |> 
-  group_by(station_id, year) |> 
-  mutate(
-    mean_temp_c_7d = slider::slide_dbl(mean_temp_c, mean, .before = 6, .after = 0, .complete = TRUE),
-    mean_airtemp_c_7d = slider::slide_dbl(mean_airtemp_c, mean, .before = 6, .after = 0, .complete = TRUE)
-  ) |> 
-  summarise(
-    max_temp_c_7d = max(mean_temp_c_7d, na.rm = TRUE),
-    max_airtemp_c_7d = max(mean_airtemp_c_7d, na.rm = TRUE),
-    mean_temp_c_7d = mean(mean_temp_c_7d, na.rm = TRUE),
-    mean_airtemp_c_7d = mean(mean_airtemp_c_7d, na.rm = TRUE)
-  )
-
-temp_july |> 
-  select(station_id, year, airtemp_c = mean_mean_airtemp_c, temp_c = mean_mean_temp_c) |> 
-  add_count(station_id, name = "n_year") |> 
-  # filter(n_year >= 10) |>
-  pivot_longer(ends_with("_c")) |> 
-  group_by(station_id, name) |> 
-  mutate(
-    scaled = value - mean(value)
-  ) |> 
-  pivot_longer(c(value, scaled), names_to = "var") |>
-  mutate(var = factor(var, levels = c("value", "scaled"))) |> 
-  ggplot(aes(year, value)) +
-  geom_line(aes(group = station_id), alpha = 0.5) +
-  geom_point(size = 1, alpha = 0.5) +
-  facet_grid(vars(var), vars(name), scales = "free_y", switch = "y", labeller = labeller(
-    var = c(
-      value = "mean july",
-      scaled = "scaled mean july"
-    ),
-    name = c(
-      airtemp_c = "air temp (degC)",
-      temp_c = "water temp (degC)"
-    )
-  )) +
-  labs(y = NULL, title = "mean july temperatures", subtitle = "scaled = centered by station (subtract long-term mean)") +
-  theme_bw() +
-  theme(
-    strip.placement = "outside",
-    strip.background = element_blank()
-  )
-
-temp_july |> 
-  arrange(station_id, year) |>
-  ggplot(aes(mean_mean_airtemp_c, mean_mean_temp_c)) +
-  geom_point(aes(color = year)) +
-  scale_color_viridis_c("year") +
-  labs(
-    x = "mean july air temp (degC)", y = "mean july water temp (degC)",
-    title = "mean july air vs water temperatures"
-  ) +
-  theme_bw()
-
-temp_july_7d |> 
-  arrange(station_id, year) |>
-  ggplot(aes(max_airtemp_c_7d, max_temp_c_7d)) +
-  geom_point(aes(color = year)) +
-  scale_color_viridis_c("year") +
-  labs(
-    x = "max 7-day july air temp (degC)", y = "max 7-day july water temp (degC)",
-    title = "max 7-day july air vs water temperatures"
-  ) +
-  theme_bw()
-
-state <- USAboundaries::us_states(states = "AK", resolution = "low") |> 
-  st_transform(crs = 3338)
-
-temp_july_sf <- temp_july |> 
-  select(station_id, year, temp_c = mean_mean_temp_c) |> 
-  filter(year >= 2012) |> 
-  left_join(
-    stn |> 
-      select(station_id, latitude, longitude),
-    by = "station_id"
-  ) |> 
-  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
-
-state |> 
-  ggplot() +
-  geom_sf(fill = NA) +
-  geom_sf(
-    data = temp_july_sf,
-    aes(color = temp_c), size = 2
-  ) +
-  scale_color_viridis_c("mean july\nwater temp\n(degC)") +
-  facet_wrap(vars(year), ncol = 3) +
-  theme_void()
+# temp |> 
+#   select(-data_day) |> 
+#   unnest(data_week) |> 
+#   ggplot(aes(date, mean_temp_c)) +
+#   geom_hex(bins = 100) +
+#   scale_fill_viridis_c(trans = "log10") +
+#   scale_x_date(date_breaks = "2 years", date_labels = "%Y") +
+#   labs(x = "date", y = "weekly mean water temp (degC)") +
+#   theme_bw()
+# 
+# temp |> 
+#   select(-data_day) |> 
+#   unnest(data_week) |> 
+#   ggplot(aes(ymd(20001231) + days(yday(date)), mean_temp_c)) +
+#   geom_hex(bins = 50) +
+#   scale_x_date(date_labels = "%b %d") +
+#   scale_fill_viridis_c("count", trans = "log10") +
+#   labs(x = "day of year", y = "weekly mean water temp (degC)") +
+#   theme_bw()
+# 
+# temp |> 
+#   select(-data_day) |> 
+#   unnest(data_week) |> 
+#   filter(mean_airtemp_c > -10) |> 
+#   ggplot(aes(mean_airtemp_c, mean_temp_c)) +
+#   geom_hex(bins = 100) +
+#   geom_hline(yintercept = 0, alpha = 0.5) +
+#   geom_vline(xintercept = 0, alpha = 0.5) +
+#   scale_fill_viridis_c("count", trans = "log10") +
+#   labs(x = "weekly mean air temp (degC)", y = "weekly mean water temp (degC)") +
+#   theme_bw()
+# 
+# temp_july <- temp |> 
+#   select(-data_week) |> 
+#   unnest(data_day) |> 
+#   filter(month(date) == 7, !is.na(mean_temp_c)) |> 
+#   group_by(station_id, year) |> 
+#   summarise(
+#     n = n(),
+#     across(starts_with("mean_"), \(x) max(x, na.rm = TRUE), .names = "max_{.col}"),
+#     across(starts_with("mean_"), \(x) mean(x, na.rm = TRUE), .names = "mean_{.col}"),
+#     .groups = "drop"
+#   ) |> 
+#   filter(n == 31)
+# 
+# temp_july_7d <- temp |>
+#   select(-data_week) |> 
+#   unnest(data_day) |> 
+#   filter(month(date) == 7, !is.na(mean_temp_c)) |> 
+#   add_count(station_id, year, name = "n_day") |> 
+#   filter(n_day == 31) |>
+#   select(-n_day) |> 
+#   arrange(station_id, date) |> 
+#   group_by(station_id, year) |> 
+#   mutate(
+#     mean_temp_c_7d = slider::slide_dbl(mean_temp_c, mean, .before = 6, .after = 0, .complete = TRUE),
+#     mean_airtemp_c_7d = slider::slide_dbl(mean_airtemp_c, mean, .before = 6, .after = 0, .complete = TRUE)
+#   ) |> 
+#   summarise(
+#     max_temp_c_7d = max(mean_temp_c_7d, na.rm = TRUE),
+#     max_airtemp_c_7d = max(mean_airtemp_c_7d, na.rm = TRUE),
+#     mean_temp_c_7d = mean(mean_temp_c_7d, na.rm = TRUE),
+#     mean_airtemp_c_7d = mean(mean_airtemp_c_7d, na.rm = TRUE)
+#   )
+# 
+# temp_july |> 
+#   select(station_id, year, airtemp_c = mean_mean_airtemp_c, temp_c = mean_mean_temp_c) |> 
+#   add_count(station_id, name = "n_year") |> 
+#   # filter(n_year >= 10) |>
+#   pivot_longer(ends_with("_c")) |> 
+#   group_by(station_id, name) |> 
+#   mutate(
+#     scaled = value - mean(value)
+#   ) |> 
+#   pivot_longer(c(value, scaled), names_to = "var") |>
+#   mutate(var = factor(var, levels = c("value", "scaled"))) |> 
+#   ggplot(aes(year, value)) +
+#   geom_line(aes(group = station_id), alpha = 0.5) +
+#   geom_point(size = 1, alpha = 0.5) +
+#   facet_grid(vars(var), vars(name), scales = "free_y", switch = "y", labeller = labeller(
+#     var = c(
+#       value = "mean july",
+#       scaled = "scaled mean july"
+#     ),
+#     name = c(
+#       airtemp_c = "air temp (degC)",
+#       temp_c = "water temp (degC)"
+#     )
+#   )) +
+#   labs(y = NULL, title = "mean july temperatures", subtitle = "scaled = centered by station (subtract long-term mean)") +
+#   theme_bw() +
+#   theme(
+#     strip.placement = "outside",
+#     strip.background = element_blank()
+#   )
+# 
+# temp_july |> 
+#   arrange(station_id, year) |>
+#   ggplot(aes(mean_mean_airtemp_c, mean_mean_temp_c)) +
+#   geom_point(aes(color = year)) +
+#   scale_color_viridis_c("year") +
+#   labs(
+#     x = "mean july air temp (degC)", y = "mean july water temp (degC)",
+#     title = "mean july air vs water temperatures"
+#   ) +
+#   theme_bw()
+# 
+# temp_july_7d |> 
+#   arrange(station_id, year) |>
+#   ggplot(aes(max_airtemp_c_7d, max_temp_c_7d)) +
+#   geom_point(aes(color = year)) +
+#   scale_color_viridis_c("year") +
+#   labs(
+#     x = "max 7-day july air temp (degC)", y = "max 7-day july water temp (degC)",
+#     title = "max 7-day july air vs water temperatures"
+#   ) +
+#   theme_bw()
+# 
+# state <- USAboundaries::us_states(states = "AK", resolution = "low") |> 
+#   st_transform(crs = 3338)
+# 
+# temp_july_sf <- temp_july |> 
+#   select(station_id, year, temp_c = mean_mean_temp_c) |> 
+#   filter(year >= 2012) |> 
+#   left_join(
+#     stn |> 
+#       select(station_id, latitude, longitude),
+#     by = "station_id"
+#   ) |> 
+#   st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+# 
+# state |> 
+#   ggplot() +
+#   geom_sf(fill = NA) +
+#   geom_sf(
+#     data = temp_july_sf,
+#     aes(color = temp_c), size = 2
+#   ) +
+#   scale_color_viridis_c("mean july\nwater temp\n(degC)") +
+#   facet_wrap(vars(year), ncol = 3) +
+#   theme_void()
 
 
 # export ------------------------------------------------------------------
 
 export_temp <- temp |> 
-  select(-data_week) |> 
   unnest(data_day) |> 
-  select(station_id, date, temp_c = mean_temp_c, airtemp_c = mean_airtemp_c) |>
-  arrange(station_id, date) |> 
-  nest_by(station_id) |>
+  select(dataset, station_id, date, temp_c = mean_temp_c, airtemp_c = mean_airtemp_c) |>
+  arrange(dataset, station_id, date) |> 
+  nest_by(dataset, station_id) |>
   mutate(
     start = min(data$date),
     end = max(data$date),
     n = sum(!is.na(data$temp_c)),
     filename = {
-      f <- glue("{snakecase::to_snake_case(station_id)}.json")
+      f <- toupper(glue("{dataset}_{snakecase::to_snake_case(station_id)}.json"))
       write_json(data, file.path("../public/data/stations", f))
       f
     }
-  ) |> 
+  ) |>
   print()
 
 export_stn <- stn |> 
   inner_join(
     export_temp |> 
       select(-data),
-    by = "station_id"
+    by = c("dataset", "station_id")
   )
 
 # geojson
@@ -556,3 +557,10 @@ export_stn |>
 # json
 export_stn |> 
   write_json("../public/data/stations.json", digits = 8)
+
+list(
+  daymet = list(
+    last_year = 2024
+  )
+) |> 
+  write_json("../public/data/config.json", auto_unbox = TRUE)
