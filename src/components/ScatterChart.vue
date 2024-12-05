@@ -3,7 +3,7 @@
 </template>
 
 <script setup>
-import { onMounted, watch } from 'vue'
+import { onMounted, watch, ref } from 'vue'
 import { tooltipFormatter } from '@/lib/utils'
 
 const props = defineProps(['series', 'loading'])
@@ -29,15 +29,21 @@ function toggleLoading (loading) {
 
 function update () {
   const chart = chartEl.value.chart
-  if (!chart) return
+  if (!chart || !props.series) return
 
   const totalValues = props.series.reduce((acc, s) => acc + s.data.length, 0)
-  const opacity = Math.sqrt(2 / Math.log10(totalValues))
+  const opacity = totalValues <= 1 ? 0.9 : Math.min(0.9, Math.sqrt(2 / Math.log10(totalValues)))
 
   // Get the min and max values across all data points
   const allPoints = props.series.flatMap(s => s.data.filter(d =>
     d.airtemp_c !== undefined && d.temp_c !== undefined
   ))
+
+  if (allPoints.length === 0) {
+    chart.update({ series: [] }, true, true)
+    return
+  }
+
   const minTemp = Math.min(...allPoints.map(d => Math.min(d.airtemp_c, d.temp_c)))
   const maxTemp = Math.max(...allPoints.map(d => Math.max(d.airtemp_c, d.temp_c)))
 
@@ -47,7 +53,8 @@ function update () {
       type: 'line',
       name: '1:1 Line',
       data: [[minTemp, minTemp], [maxTemp, maxTemp]],
-      color: '#666666',
+      color: '#000000',
+      lineWidth: 2,
       dashStyle: 'dash',
       enableMouseTracking: false,
       showInLegend: true

@@ -44,12 +44,12 @@ function toggleLoading (loading) {
 
 function julianDay (dateString) {
   const d = DateTime.fromISO(dateString, { zone: 'US/Alaska' })
-  return d.diff(d.startOf('year'), 'days').days
+  return Math.round(d.diff(d.startOf('year'), 'days').days)
 }
 
 function update() {
   const chart = chartEl.value.chart
-  if (!chart) return
+  if (!chart || !props.series) return
 
   let series = []
   if (showIndividualYears.value) {
@@ -102,6 +102,8 @@ function update() {
       const groupedByJday = groups(s.data, d => julianDay(d.date))
       const data = Array.from(groupedByJday, ([day, values]) => {
         const temps = values.map(v => v.temp_c).filter(t => t !== null && !isNaN(t))
+        if (temps.length === 0) return null
+
         const mean = temps.reduce((a, b) => a + b, 0) / temps.length
         const min = Math.min(...temps)
         const max = Math.max(...temps)
@@ -113,13 +115,14 @@ function update() {
           high: max,
           n: temps.length
         }
-      }).sort((a, b) => a.x - b.x)
+      }).filter(d => d !== null).sort((a, b) => a.x - b.x)
 
       const lineSeries = {
         id: `${s.station_id}`,
         name: `${s.station_id}`,
         color: s.color,
         type: 'line',
+        lineWidth: 2,
         zIndex: 1,
         data
       }
@@ -132,7 +135,6 @@ function update() {
         zIndex: 0,
         linkedTo: ':previous',
         enableMouseTracking: false,
-        // marker: { enabled: false },
         data: data.map(point => [point.x, point.low, point.high])
       }
 
@@ -201,8 +203,12 @@ const settings = {
     positioner: function (labelWidth, labelHeight, point) {
       const chartWidth = this.chart.chartWidth
       const chartHeight = this.chart.chartHeight
+      const x = Math.max(10, Math.min(
+        chartWidth - labelWidth - 10,
+        point.plotX < (chartWidth - labelWidth) * 0.8 ? point.plotX : chartWidth - labelWidth - 10
+      ))
       return {
-        x: point.plotX < (chartWidth - labelWidth) * 0.8 ? point.plotX : chartWidth - labelWidth - 10,
+        x,
         y: chartHeight - labelHeight - 10,
       }
     },

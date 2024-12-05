@@ -114,11 +114,11 @@
     >
       <LTooltip>
         <div>
-          <div class="text-body-1 font-weight-bold" style="max-width:800px; text-wrap:wrap;">Station: {{ station.station_code }}</div>
+          <div class="text-body-1 font-weight-bold" style="max-width:800px; text-wrap:wrap;">Station: {{ station.station_code || 'Unknown' }}</div>
           <div>
-            {{ station.waterbody_name }}<br>
-            {{ station.provider_name }}<br>
-            {{ station.start }} to {{ station.end }} ({{ station.n.toLocaleString() }} days)
+            {{ station.waterbody_name || 'Unknown waterbody' }}<br>
+            {{ station.provider_name || 'Unknown provider' }}<br>
+            {{ station.start || 'Unknown' }} to {{ station.end || 'Unknown' }} ({{ (station.n || 0).toLocaleString() }} days)
           </div>
         </div>
       </LTooltip>
@@ -152,7 +152,6 @@
 
     <LGeoJson
       v-if="basinGeoJson && basinGeoJson.visible && basinGeoJson.data"
-      ref="basinRef"
       :geojson="basinGeoJson.data"
       :options="basinGeoJson.options"
       :options-style="basinGeoJson.style"
@@ -171,7 +170,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { LMap, LTileLayer, LCircleMarker, LGeoJson, LControlLayers, LControl, LTooltip } from '@vue-leaflet/vue-leaflet'
 
 import { basemaps } from '@/lib/basemaps'
@@ -192,8 +191,6 @@ const props = defineProps({
 })
 const emit = defineEmits(['select', 'select-basin'])
 
-const map = ref(null)
-const basinRef = ref(null)
 const selectedBasinLayer = ref(null)
 
 const dataSourceColors = {
@@ -251,6 +248,7 @@ const selectedBasinStyle = () => {
 }
 
 function basinTooltipContent (feature) {
+  if (!feature?.properties?.name || !feature.id) return ''
   return `<span class="text-body-1 font-weight-bold">Basin: ${feature.properties.name}</span><br>HUC${feature.id.length}: ${feature.id}`
 }
 
@@ -263,41 +261,49 @@ async function loadBasinLayer (basinLayer) {
   }
   basinGeoJson.value.loading = true
   emit('select-basin', null)
-  const response = await fetch(`data/gis/wbd_${basinLayer}.geojson`)
-  const data = await response.json()
-  basinGeoJson.value.data = data
-  basinGeoJson.value.options = {
-    onEachFeature: (feature, layer) => {
-      layer.bindTooltip(
-        basinTooltipContent(feature),
-        { permanent: false, sticky: true }
-      )
-      layer.on({
-        mousemove: (evt) => {
-          evt.target.setStyle({
-            weight: 3,
-            color: 'black'
-          })
-        },
-        mouseout: (evt) => {
-          evt.target.setStyle({
-            weight: 2,
-            color: '#777',
-          })
-        }
-      })
+  try {
+    const response = await fetch(`data/gis/wbd_${basinLayer}.geojson`)
+    if (!response.ok) throw new Error(`Failed to load basin layer: ${response.statusText}`)
+    const data = await response.json()
+    basinGeoJson.value.data = data
+    basinGeoJson.value.options = {
+      onEachFeature: (feature, layer) => {
+        layer.bindTooltip(
+          basinTooltipContent(feature),
+          { permanent: false, sticky: true }
+        )
+        layer.on({
+          mousemove: (evt) => {
+            evt.target.setStyle({
+              weight: 3,
+              color: 'black'
+            })
+          },
+          mouseout: (evt) => {
+            evt.target.setStyle({
+              weight: 2,
+              color: '#777',
+            })
+          }
+        })
+      }
     }
-  }
-  basinGeoJson.value.style = () => {
-    return {
-      weight: 2,
-      color: '#777',
-      opacity: 1,
-      fillOpacity: 0
+    basinGeoJson.value.style = () => {
+      return {
+        weight: 2,
+        color: '#777',
+        opacity: 1,
+        fillOpacity: 0
+      }
     }
+    basinGeoJson.value.visible = true
+  } catch (error) {
+    console.error('Error loading basin layer:', error)
+    basinGeoJson.value.visible = false
+    basinGeoJson.value.data = null
+  } finally {
+    basinGeoJson.value.loading = false
   }
-  basinGeoJson.value.visible = true
-  basinGeoJson.value.loading = false
 }
 
 const selectedBasinGeoJson = computed(() => {
@@ -307,6 +313,7 @@ const selectedBasinGeoJson = computed(() => {
 })
 
 function onClickBasinLayer (evt) {
+  if (!evt?.layer?.feature) return
   const feature = evt.layer.feature
   evt.layer.bringToFront()
   emit('select-basin', feature.id)

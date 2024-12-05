@@ -1,6 +1,6 @@
 <template>
   <v-app-bar color="primary" density="compact">
-    <v-app-bar-title>AKTEMP | Stream Temperature Data Viz Explorer</v-app-bar-title>
+    <v-app-bar-title>AKTEMP-VIZ | Stream Temperature Data Visualizations</v-app-bar-title>
     <v-spacer></v-spacer>
     <v-btn
       color="white"
@@ -41,6 +41,7 @@
     </v-btn>
   </v-app-bar>
   <v-container fluid style="background-color: #f5f5f5;" class="fill-height align-start">
+    <!-- Welcome Dialog -->
     <v-dialog v-model="showWelcome" max-width="1000">
       <v-card>
         <v-card-title class="text-h4 font-weight-bold primary--text pa-4 ml-2">
@@ -52,7 +53,7 @@
             <v-col cols="12" md="6">
               <p class="text-h6 font-weight-medium mb-4">Uncover water temperature trends and patterns in Alaska's streams and rivers.</p>
               <v-list class="mb-4">
-                <v-list-item v-for="(feature, index) in features" :key="index" :prepend-icon="feature.icon" class="my-2">
+                <v-list-item v-for="(feature, index) in welcomeFeatures" :key="index" :prepend-icon="feature.icon" class="my-2">
                   <v-list-item-title class="font-weight-medium">{{ feature.title }}</v-list-item-title>
                   <div class="text-body-2">{{ feature.description }}</div>
                 </v-list-item>
@@ -89,6 +90,8 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <!-- Data Sources Dialog -->
     <v-dialog v-model="showDatasets" max-width="800">
       <v-card>
         <v-toolbar color="grey-lighten-2" flat density="compact">
@@ -116,6 +119,7 @@
     </v-dialog>
 
     <v-row>
+      <!-- Stations -->
       <v-col :cols="lgAndUp && isCollapsed ? '1' : '12'" :lg="lgAndUp && isCollapsed ? '1' : '5'" :xl="lgAndUp && isCollapsed ? '1' : '4'">
         <v-card :elevation="4">
           <v-toolbar color="grey-lighten-2" flat density="compact">
@@ -400,9 +404,11 @@
         </v-card>
       </v-col>
 
+      <!-- Charts -->
       <v-col cols="12" :lg="isCollapsed ? '11' : '7'" :xl="isCollapsed ? '11' : '8'">
         <v-row class="mb-0">
           <v-col cols="12">
+            <!-- Time Series -->
             <v-card data-step="timeseries" :elevation="4">
               <v-toolbar color="grey-lighten-2" flat density="compact">
                 <v-toolbar-title>Time Series</v-toolbar-title>
@@ -444,6 +450,7 @@
 
         <v-row class="mt-0">
           <v-col cols="12" md="6">
+            <!-- Seasonality -->
             <v-card data-step="seasonal" :elevation="4">
               <v-toolbar color="grey-lighten-2" flat density="compact">
                 <v-toolbar-title>Seasonality</v-toolbar-title>
@@ -479,6 +486,7 @@
             </v-card>
           </v-col>
           <v-col cols="12" md="6">
+            <!-- Air vs Water Temp -->
             <v-card data-step="scatter" :elevation="4">
               <v-toolbar color="grey-lighten-2" flat density="compact">
                 <v-toolbar-title>Air vs Water Scatterplot</v-toolbar-title>
@@ -510,7 +518,7 @@
                 </v-dialog>
               </v-toolbar>
               <div class="px-4 py-2">
-                <p class="text-caption">Note: Air temp. data only available through calendar year {{ config.daymet.last_year }}. More recent water temperature data not shown. See <a href="#" @click.prevent="showScatterHelp = true">help</a> for details.</p>
+                <p class="text-caption">Note: Air temp. data only available through calendar year {{ config.daymet.last_year }}. More recent water temperature data not shown. <a href="#" @click.prevent="showScatterHelp = true">More info</a></p>
               </div>
               <ScatterChart :series="filteredSeries" :loading="loading" />
             </v-card>
@@ -522,11 +530,11 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { DateTime } from 'luxon'
-import booleanPointInPolygon from '@turf/boolean-point-in-polygon'
 import { driver } from 'driver.js'
 import { useDisplay } from 'vuetify'
+import { debounce } from 'lodash-es'
 
 import StationMap from '@/components/StationMap'
 import TimeseriesChart from '@/components/TimeseriesChart'
@@ -535,6 +543,328 @@ import ScatterChart from '@/components/ScatterChart'
 
 const { width, lgAndUp } = useDisplay()
 
+// REFS
+const loading = ref(false)
+const isCollapsed = ref(false)
+
+const showWelcome = ref(true)
+const showDatasets = ref(false)
+const showTimeseriesHelp = ref(false)
+const showSeasonalHelp = ref(false)
+const showScatterHelp = ref(false)
+
+const stations = ref([])
+const selectedStations = ref([])
+const selectedBasin = ref(null)
+const timeRange = ref(null)
+
+const maxSelected = 4
+const showFilters = ref(false)
+const filterSearch = ref('')
+const filterSelected = ref(false)
+const filterAfter = ref('')
+const filterBefore = ref('')
+const filterCount = ref(null)
+
+const config = ref({ daymet: { last_year: 2023 } })
+
+const debouncedSearch = ref('')
+
+// Create debounced watcher
+watch(filterSearch, debounce((newValue) => {
+  debouncedSearch.value = newValue
+}, 300))
+
+// FILTERS
+const filtersEnabled = computed(() => {
+  return filterAfter.value || filterBefore.value || filterCount.value
+})
+
+const activeFilters = computed(() => {
+  const filters = []
+
+  if (selectedBasin.value) {
+    filters.push({
+      type: 'basin',
+      label: 'Basin: ',
+      value: `${selectedBasin.value}`
+    })
+  }
+
+  if (filterBefore.value) {
+    filters.push({
+      type: 'before',
+      label: 'Start <=',
+      value: filterBefore.value
+    })
+  }
+
+  if (filterAfter.value) {
+    filters.push({
+      type: 'after',
+      label: 'End >= ',
+      value: filterAfter.value
+    })
+  }
+
+  if (filterCount.value) {
+    filters.push({
+      type: 'count',
+      label: '# Values >= ',
+      value: filterCount.value
+    })
+  }
+
+  if (filterSelected.value) {
+    filters.push({
+      type: 'selected',
+      label: 'Selected Stations Only',
+      value: ''
+    })
+  }
+
+  return filters
+})
+
+function removeFilter(filterType) {
+  switch (filterType) {
+    case 'basin':
+      selectedBasin.value = null
+      break
+    case 'selected':
+      filterSelected.value = false
+      break
+    case 'after':
+      filterAfter.value = ''
+      break
+    case 'before':
+      filterBefore.value = ''
+      break
+    case 'count':
+      filterCount.value = null
+      break
+  }
+}
+
+function resetFilters () {
+  filterSelected.value = false
+  filterAfter.value = ''
+  filterBefore.value = ''
+  filterCount.value = null
+  selectedBasin.value = null
+}
+
+function isStationFilteredBySearch (station, search) {
+  return ['station_code', 'waterbody_name', 'provider_code'].some(key =>
+    station[key]?.toLowerCase().includes(search.toLowerCase())
+  )
+}
+
+const filteredStations = computed(() => {
+  let selectedBasinKey = null
+  if (selectedBasin.value) {
+    selectedBasinKey = `huc${selectedBasin.value.length}`
+  }
+  return stations.value.filter(station => {
+    return (!filterSelected.value || station.isSelected) &&
+      (!debouncedSearch.value || isStationFilteredBySearch(station, debouncedSearch.value)) &&
+      (!filterBefore.value || station.start <= filterBefore.value) &&
+      (!filterAfter.value || station.end >= filterAfter.value) &&
+      (!filterCount.value || station.n >= parseInt(filterCount.value, 10)) &&
+      (!selectedBasin.value || station[selectedBasinKey] === selectedBasin.value)
+  })
+})
+
+const filteredSeries = computed(() => {
+  return series.value.map(s => {
+    return {
+      ...s,
+      data: s.data.filter(d => {
+        if (!timeRange.value) return true
+        return d.millis >= (timeRange.value[0]).valueOf() && d.millis <= (timeRange.value[1]).valueOf()
+      })
+    }
+  })
+})
+
+// TABLE
+const headers = [
+  {
+    title: 'Provider',
+    sortable: true,
+    value: 'provider_code',
+    nowrap: false,
+    maxWidth: '250px'
+  },
+  {
+    title: 'Station',
+    sortable: true,
+    value: 'station_code',
+    nowrap: false,
+    maxWidth: '250px'
+  },
+  {
+    title: 'Waterbody',
+    sortable: true,
+    value: 'waterbody_name',
+    nowrap: false,
+    maxWidth: '250px'
+  },
+  {
+    title: 'Start',
+    sortable: true,
+    align: 'end',
+    value: 'start',
+    width: '20px'
+  },
+  {
+    title: 'End',
+    sortable: true,
+    align: 'end',
+    value: 'end',
+    width: '20px'
+  },
+  {
+    title: '# Values',
+    sortable: true,
+    align: 'end',
+    value: 'n',
+    width: '110px'
+   }
+]
+
+// COLORS
+const defaultColors = [
+  '#e41a1c',
+  '#377eb8',
+  '#4daf4a',
+  '#984ea3',
+  '#ff7f00',
+  '#ffff33',
+  '#a65628',
+  '#f781bf',
+  '#999999'
+]
+let colors = defaultColors.slice()
+
+// MOUNTED
+onMounted(async () => {
+  stations.value = await fetchStations()
+  config.value = await fetchConfig()
+})
+
+// SELECTIONS
+async function selectStation (station) {
+  if (selectedStations.value.some(d => d.station_id === station.station_id)) {
+    colors.unshift(station.color)
+    station.isSelected = false
+    selectedStations.value = selectedStations.value.filter(d => d.station_id !== station.station_id)
+  } else {
+    if (selectedStations.value.length >= maxSelected) {
+      alert(`You can only select up to ${maxSelected} stations. Unselect one to select another.`)
+      return
+    }
+    station.isSelected = true
+    station.data = await fetchData(station)
+    station.color = colors.shift()
+    selectedStations.value.push(station)
+  }
+}
+
+const series = computed(() => {
+  return selectedStations.value.map(station => {
+    return {
+      station_id: `${station.provider_station_code}:${station.waterbody_name}`,
+      color: station.color,
+      station,
+      showInNavigator: true,
+      data: station.data.map(d => ({
+        millis: DateTime.fromISO(d.date, { zone: 'US/Alaska' }).toMillis(),
+        date: d.date,
+        year: +d.date.slice(0, 4),
+        temp_c: d.temp_c,
+        airtemp_c: d.airtemp_c,
+        station_id: station.provider_station_code
+      })),
+    }
+  })
+})
+
+async function selectBasin (basinId) {
+  if (!basinId || basinId === selectedBasin.value) {
+    selectedBasin.value = null
+    return
+  }
+  selectedBasin.value = basinId
+}
+
+function clearSelection () {
+  selectedStations.value.forEach(d => {
+    d.isSelected = false
+  })
+  selectedStations.value.length = 0
+  colors = defaultColors.slice()
+}
+
+function onTimeseriesZoom (range) {
+  timeRange.value = range
+}
+
+// FETCH
+async function fetchConfig() {
+  try {
+    const response = await fetch(`data/config.json`)
+    if (!response.ok) {
+      alert('Error loading configuration')
+      return config.value
+    }
+    const json = await response.json()
+    return json
+  } catch (error) {
+    alert('Error loading configuration')
+    return { daymet: { last_year: new Date().getFullYear() - 1 } }
+  }
+}
+
+async function fetchStations() {
+  loading.value = true
+  try {
+    const response = await fetch(`data/stations.json`)
+    if (!response.ok) {
+      alert('Error loading stations')
+      return []
+    }
+    const json = await response.json()
+    json.sort((a, b) => a.provider_station_code.localeCompare(b.provider_station_code))
+    return json
+  } catch (error) {
+    alert('Error loading stations')
+    return []
+  } finally {
+    loading.value = false
+  }
+}
+
+async function fetchData(station) {
+  if (station.data) return station.data
+  loading.value = true
+  try {
+    const response = await fetch(`data/stations/${station.filename}`)
+    if (!response.ok) {
+      alert(`Error loading data for station ${station.provider_station_code}`)
+      return []
+    }
+    const json = await response.json()
+    return json
+  } catch (error) {
+    alert(`Error loading data for station ${station.provider_station_code}`)
+    return []
+  } finally {
+    loading.value = false
+  }
+}
+
+// TOUR
 const driverTour = driver({
   showProgress: true,
   stagePadding: 10,
@@ -619,310 +949,12 @@ const startTour = () => {
   showWelcome.value = false
 }
 
-const stations = ref([])
-const selectedStations = ref([])
-const selectedBasin = ref(null)
-const timeRange = ref(null)
-const loading = ref(false)
-
-const showWelcome = ref(true)
-const showDatasets = ref(false)
-const showTimeseriesHelp = ref(false)
-const showSeasonalHelp = ref(false)
-const showScatterHelp = ref(false)
-
-const maxSelected = 4
-const showFilters = ref(false)
-const filterSearch = ref('')
-const filterSelected = ref(false)
-const filterAfter = ref('')
-const filterBefore = ref('')
-const filterCount = ref(null)
-
-const filtersEnabled = computed(() => {
-  return filterAfter.value || filterBefore.value || filterCount.value
-})
-
-const activeFilters = computed(() => {
-  const filters = []
-
-  // if (selectedBasinLayer.value && selectedBasin.value) {
-  //   filters.push({
-  //     type: 'basin',
-  //     label: 'Basin: ',
-  //     value: `${selectedBasin.value.properties.name} (${selectedBasin.value.id})`
-  //   })
-  // }
-
-  if (filterBefore.value) {
-    filters.push({
-      type: 'before',
-      label: 'Start <=',
-      value: filterBefore.value
-    })
-  }
-
-  if (filterAfter.value) {
-    filters.push({
-      type: 'after',
-      label: 'End >= ',
-      value: filterAfter.value
-    })
-  }
-
-  if (filterCount.value) {
-    filters.push({
-      type: 'count',
-      label: '# Values >= ',
-      value: filterCount.value
-    })
-  }
-
-  if (filterSelected.value) {
-    filters.push({
-      type: 'selected',
-      label: 'Selected Stations Only',
-      value: ''
-    })
-  }
-
-  return filters
-})
-
-function removeFilter(filterType) {
-  switch (filterType) {
-    // case 'basin':
-    //   // selectedBasinLayer.value = null
-    //   selectedBasin.value = null
-    //   break
-    // case 'stationId':
-    //   filterSearch.value = ''
-    //   break
-    case 'selected':
-      filterSelected.value = false
-      break
-    case 'after':
-      filterAfter.value = ''
-      break
-    case 'before':
-      filterBefore.value = ''
-      break
-    case 'count':
-      filterCount.value = null
-      break
-  }
-}
-
-function resetFilters () {
-  filterSelected.value = false
-  filterAfter.value = ''
-  filterBefore.value = ''
-  filterCount.value = null
-  selectedBasin.value = null
-}
-
-function clearSelection () {
-  selectedStations.value.forEach(d => {
-    d.isSelected = false
-  })
-  selectedStations.value.length = 0
-  colors = defaultColors.slice()
-}
-
-const headers = [
-  {
-    title: 'Provider',
-    sortable: true,
-    value: 'provider_code',
-    nowrap: false,
-    maxWidth: '250px'
-  },
-  {
-    title: 'Station',
-    sortable: true,
-    value: 'station_code',
-    nowrap: false,
-    maxWidth: '250px'
-  },
-  {
-    title: 'Waterbody',
-    sortable: true,
-    value: 'waterbody_name',
-    nowrap: false,
-    maxWidth: '250px'
-  },
-  {
-    title: 'Start',
-    sortable: true,
-    align: 'end',
-    value: 'start',
-    width: '20px'
-  },
-  {
-    title: 'End',
-    sortable: true,
-    align: 'end',
-    value: 'end',
-    width: '20px'
-  },
-  {
-    title: '# Values',
-    sortable: true,
-    align: 'end',
-    value: 'n',
-    width: '110px'
-   }
-]
-
-// const defaultColors = [
-//   '#2E5DAB',
-// 	'#D84727',
-// 	'#EFC12F',
-// 	'#78909C',
-// 	'#7B519D'
-// // ]
-// const defaultColors = [
-//   '#1b9e77',
-//   '#d95f02',
-//   '#7570b3',
-//   '#e7298a',
-//   '#66a61e'
-// ]
-const defaultColors = [
-  '#e41a1c',
-  '#377eb8',
-  '#4daf4a',
-  '#984ea3',
-  '#ff7f00',
-  '#ffff33',
-  '#a65628',
-  '#f781bf',
-  '#999999'
-]
-let colors = defaultColors.slice()
-
-const config = ref({
-  daymet: {
-    last_year: 2023
-  }
-})
-
-onMounted(async () => {
-  stations.value = await fetchStations()
-  config.value = await fetchConfig()
-})
-
-async function selectStation (station) {
-  if (selectedStations.value.some(d => d.station_id === station.station_id)) {
-    colors.unshift(station.color)
-    station.isSelected = false
-    selectedStations.value = selectedStations.value.filter(d => d.station_id !== station.station_id)
-  } else {
-    if (selectedStations.value.length >= maxSelected) {
-      alert(`You can only select up to ${maxSelected} stations. Unselect one to select another.`)
-      return
-    }
-    station.isSelected = true
-    station.data = await fetchData(station)
-    station.color = colors.shift()
-    selectedStations.value.push(station)
-  }
-}
-
-async function selectBasin (basinId) {
-  if (!basinId || basinId === selectedBasin.value) {
-    selectedBasin.value = null
-    return
-  }
-  selectedBasin.value = basinId
-}
-
-const series = computed(() => {
-  return selectedStations.value.map(station => {
-    return {
-      station_id: `${station.provider_station_code}:${station.waterbody_name}`,
-      color: station.color,
-      station,
-      showInNavigator: true,
-      data: station.data.map(d => ({
-        millis: DateTime.fromISO(d.date, { zone: 'US/Alaska' }).toMillis(),
-        date: d.date,
-        year: +d.date.slice(0, 4),
-        temp_c: d.temp_c,
-        airtemp_c: d.airtemp_c,
-        station_id: station.provider_station_code
-      })),
-    }
-  })
-})
-
-function isStationFilteredBySearch (station, search) {
-  return ['station_code', 'waterbody_name', 'provider_code'].some(key =>
-    station[key]?.toLowerCase().includes(search.toLowerCase())
-  )
-}
-
-const filteredStations = computed(() => {
-  let selectedBasinKey = null
-  if (selectedBasin.value) {
-    selectedBasinKey = `huc${selectedBasin.value.length}`
-  }
-  return stations.value.filter(station => {
-    return (!filterSelected.value || station.isSelected) &&
-      (!filterSearch.value || isStationFilteredBySearch(station, filterSearch.value)) &&
-      (!filterBefore.value || station.start <= filterBefore.value) &&
-      (!filterAfter.value || station.end >= filterAfter.value) &&
-      (!filterCount.value || station.n >= parseInt(filterCount.value, 10)) &&
-      (!selectedBasin.value || station[selectedBasinKey] === selectedBasin.value)
-  })
-})
-
-const filteredSeries = computed(() => {
-  return series.value.map(s => {
-    return {
-      ...s,
-      data: s.data.filter(d => {
-        if (!timeRange.value) return true
-        return d.millis >= (timeRange.value[0]).valueOf() && d.millis <= (timeRange.value[1]).valueOf()
-      })
-    }
-  })
-})
-
-function onTimeseriesZoom (range) {
-  timeRange.value = range
-}
-
-async function fetchConfig () {
-  const response = await fetch(`data/config.json`)
-  const json = await response.json()
-  return json
-}
-
-async function fetchStations () {
-  loading.value = true
-  const response = await fetch(`data/stations.json`)
-  const json = await response.json()
-  loading.value = false
-  return json
-}
-
-async function fetchData (station) {
-  if (station.data) return station.data
-  loading.value = true
-  const response = await fetch(`data/stations/${station.filename}`)
-  const json = await response.json()
-  loading.value = false
-  return json
-}
-
-const features = [
+// WELCOME
+const welcomeFeatures = [
   { icon: 'mdi-filter-outline', title: 'Find Stations', description: 'Filter by name, basin, time period, and observation counts' },
   { icon: 'mdi-map-marker-multiple', title: 'Compare Stations', description: `Choose up to ${maxSelected} stations to compare at a time` },
   { icon: 'mdi-chart-line', title: 'Long-term and Seasonal Trends', description: 'Visualize changes over time and seasons' },
   { icon: 'mdi-chart-scatter-plot', title: 'Air / Water Temperature Relationships', description: 'Explore the dynamics between air and water temperatures' },
 ]
-
-const isCollapsed = ref(false)
 
 </script>

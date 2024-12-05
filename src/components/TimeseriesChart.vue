@@ -3,7 +3,7 @@
 </template>
 
 <script setup>
-import { onMounted, watch } from 'vue'
+import { onMounted, watch, ref } from 'vue'
 import { DateTime } from 'luxon'
 
 const props = defineProps(['series', 'loading'])
@@ -18,6 +18,7 @@ onMounted(() => {
 })
 
 function onTimeFilter (event) {
+  if (!event) return
   if (event.min && event.max) {
     emit('zoom', [new Date(event.min), new Date(event.max)])
   }
@@ -36,7 +37,7 @@ function toggleLoading (loading) {
 
 function update () {
   const chart = chartEl.value.chart
-  if (!chart) return
+  if (!chart || !props.series) return
 
   window.chart = chart
 
@@ -49,7 +50,7 @@ function update () {
       data: s.data.map(d => ({
         ...d,
         x: d.millis,
-        y: d.temp_c,
+        y: d.temp_c ?? null,
       }))
     }
   })
@@ -68,6 +69,8 @@ function update () {
 }
 
 function tooltipFormatter(date, points) {
+  if (!points || points.length === 0) return ''
+
   const rows = points.map(d => `
     <tr>
       <td style="color: ${d.point.color}; padding-right: 10px; font-size: 18px;">&#9679;</td>
