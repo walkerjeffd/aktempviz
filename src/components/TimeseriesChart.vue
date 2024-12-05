@@ -3,15 +3,35 @@
 </template>
 
 <script setup>
-import { onMounted, watch, ref } from 'vue'
+import { onMounted, watch, ref, computed } from 'vue'
 import { DateTime } from 'luxon'
 
-const props = defineProps(['series', 'loading'])
+const props = defineProps({
+  series: Array,
+  loading: Boolean,
+  aggregation: String,
+  aggregationLabel: String
+})
 const emit = defineEmits(['zoom'])
 const chartEl = ref(null)
 
 watch(() => props.series, update)
 watch(() => props.loading, toggleLoading)
+watch(() => [props.aggregation, props.aggregationLabel], () => {
+  if (chartEl.value?.chart) {
+    chartEl.value.chart.series.forEach(s => {
+      s.update({
+        marker: {
+          enabled: props.aggregation !== 'daily'
+        }
+      }, false)
+    })
+    chartEl.value.chart.redraw()
+    chartEl.value.chart.yAxis[0].setTitle({
+      text: yAxisTitle.value
+    })
+  }
+})
 
 onMounted(() => {
   if (props.series) update()
@@ -47,6 +67,9 @@ function update () {
       ...s,
       name: s.station_id,
       showInNavigator: true,
+      marker: {
+        enabled: props.aggregation !== 'daily'
+      },
       data: s.data.map(d => ({
         ...d,
         x: d.millis,
@@ -95,6 +118,10 @@ function tooltipFormatter(date, points) {
   `;
 }
 
+const yAxisTitle = computed(() => {
+  return `${props.aggregationLabel}<br>Water Temperature (°C)`
+})
+
 const settings = {
   chart: {
     height: 470,
@@ -118,7 +145,7 @@ const settings = {
       },
       marker: {
         symbol: 'circle',
-        radius: 2
+        radius: 4
       },
       lineWidth: 2
     },
@@ -201,7 +228,7 @@ const settings = {
     endOnTick: false,
     tickAmount: 8,
     title: {
-      text: 'Daily Mean<br>Water Temperature (degC)'
+      text: yAxisTitle.value
     },
     min: 0
   },

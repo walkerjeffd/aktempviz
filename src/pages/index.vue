@@ -443,7 +443,103 @@
                   </v-card>
                 </v-dialog>
               </v-toolbar>
-              <TimeseriesChart :series="series" @zoom="onTimeseriesZoom" :loading="loading" />
+              <div class="d-flex mx-4 my-2 flex-wrap justify-space-between">
+                <div class="d-flex align-center mr-8">
+                  <div class="text-subtitle-2 mr-2">Average By:</div>
+                  <v-btn-toggle
+                    v-model="selectedAggregation"
+                    density="compact"
+                    class="mx-2"
+                    variant="outlined"
+                  >
+                    <v-btn
+                      v-for="agg in aggregationOptions"
+                      :key="agg.value"
+                      :value="agg.value"
+                    >
+                      {{ agg.label }}
+                    </v-btn>
+                  </v-btn-toggle>
+                </div>
+                <div class="d-flex align-center">
+                  <div class="text-subtitle-2 mr-2">Include Months:</div>
+                  <v-select
+                    v-model="startMonth"
+                    :items="monthOptions"
+                    item-title="label"
+                    item-value="value"
+                    placeholder="Start Month"
+                    class="mx-2"
+                    style="max-width: 200px"
+                    density="compact"
+                    variant="outlined"
+                    hide-details
+                  ></v-select>
+                  <div class="text-subtitle-2 mx-2">to</div>
+                  <v-select
+                    v-model="endMonth"
+                    :items="monthOptions"
+                    item-title="label"
+                    item-value="value"
+                    placeholder="End Month"
+                    class="mx-2"
+                    style="max-width: 200px"
+                    density="compact"
+                    variant="outlined"
+                    hide-details
+                  ></v-select>
+                  <v-btn
+                    icon="mdi-sync"
+                    variant="text"
+                    size="x-small"
+                    @click="resetMonthRange"
+                  >
+                    <v-icon>mdi-sync</v-icon>
+                    <v-tooltip activator="parent" location="bottom">Reset to January - December</v-tooltip>
+                  </v-btn>
+                </div>
+              </div>
+              <v-alert
+                v-if="selectedAggregation !== 'daily'"
+                color="grey-darken-2"
+                density="compact"
+                class="mx-4 my-2 text-caption"
+                variant="tonal"
+              >
+                <v-icon start>mdi-alert</v-icon>
+                <span v-if="selectedAggregation === 'monthly'">Months</span>
+                <span v-else>Years</span>
+                missing more than 10% of daily values <span v-if="selectedAggregation === 'annual'">across all selected months</span> are not shown.
+              </v-alert>
+
+              <v-divider></v-divider>
+
+              <div class="mx-4">
+                <TimeseriesChart
+                  :series="series"
+                  :loading="loading"
+                  :aggregation="selectedAggregation"
+                  :aggregation-label="timeAggregationLabel"
+                  @zoom="onTimeseriesZoom"
+                />
+              </div>
+
+              <v-divider></v-divider>
+              <div class="d-flex mx-4 my-2">
+                <v-spacer></v-spacer>
+                <div class="d-flex align-center">
+                  <v-btn
+                    color="primary"
+                    variant="outlined"
+                    prepend-icon="mdi-download"
+                    size="small"
+                    @click="downloadData"
+                    :disabled="selectedStations.length === 0"
+                  >
+                    Download Data
+                  </v-btn>
+                </div>
+              </div>
             </v-card>
           </v-col>
         </v-row>
@@ -489,8 +585,9 @@
             <!-- Air vs Water Temp -->
             <v-card data-step="scatter" :elevation="4">
               <v-toolbar color="grey-lighten-2" flat density="compact">
-                <v-toolbar-title>Air vs Water Scatterplot</v-toolbar-title>
-                <v-spacer></v-spacer>
+                <div class="flex-grow-1 pl-4">
+                  <v-toolbar-title>Air vs Water Scatterplot</v-toolbar-title>
+                </div>
                 <v-btn
                   icon="mdi-help-circle-outline"
                   variant="text"
@@ -534,12 +631,13 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { DateTime } from 'luxon'
 import { driver } from 'driver.js'
 import { useDisplay } from 'vuetify'
-import { debounce } from 'lodash-es'
+import { debounce, mean } from 'lodash-es'
 
 import StationMap from '@/components/StationMap'
 import TimeseriesChart from '@/components/TimeseriesChart'
 import SeasonalChart from '@/components/SeasonalChart'
 import ScatterChart from '@/components/ScatterChart'
+import { downloadCSV } from '@/lib/download'
 
 const { width, lgAndUp } = useDisplay()
 
@@ -566,7 +664,10 @@ const filterAfter = ref('')
 const filterBefore = ref('')
 const filterCount = ref(null)
 
-const config = ref({ daymet: { last_year: 2023 } })
+const config = ref({
+  daymet: { last_year: 2023 },
+  last_updated: (new Date()).toISOString()
+})
 
 const debouncedSearch = ref('')
 
@@ -771,24 +872,109 @@ async function selectStation (station) {
   }
 }
 
+const selectedAggregation = ref('daily')
+
+const aggregationOptions = [
+  { label: 'Day', value: 'daily' },
+  { label: 'Month', value: 'monthly' },
+  { label: 'Season/Year', value: 'annual' }
+]
+
 const series = computed(() => {
   return selectedStations.value.map(station => {
+    const rawData = station.data.map(d => ({
+      millis: DateTime.fromISO(d.date, { zone: 'US/Alaska' }).toMillis(),
+      date: d.date,
+      year: +d.date.slice(0, 4),
+      month: +d.date.slice(5, 7),
+      temp_c: d.temp_c,
+      airtemp_c: d.airtemp_c,
+      station_id: station.provider_station_code
+    }))
+
+    let aggregatedData
+    switch (selectedAggregation.value) {
+      case 'monthly':
+        aggregatedData = aggregateByMonth(rawData)
+        break
+      case 'annual':
+        aggregatedData = aggregateByYear(rawData)
+        break
+      default:
+        // Filter daily data by selected months
+        aggregatedData = rawData.filter(d => selectedMonths.value.includes(d.month))
+    }
+
     return {
       station_id: `${station.provider_station_code}:${station.waterbody_name}`,
       color: station.color,
       station,
       showInNavigator: true,
-      data: station.data.map(d => ({
-        millis: DateTime.fromISO(d.date, { zone: 'US/Alaska' }).toMillis(),
-        date: d.date,
-        year: +d.date.slice(0, 4),
-        temp_c: d.temp_c,
-        airtemp_c: d.airtemp_c,
-        station_id: station.provider_station_code
-      })),
+      data: aggregatedData
     }
   })
 })
+
+function aggregateByMonth(data) {
+  const grouped = {}
+  data.forEach(d => {
+    const month = +d.date.slice(5, 7)
+    // Only process data for selected months
+    if (selectedMonths.value.includes(month)) {
+      const key = d.date.slice(0, 7) // YYYY-MM
+      if (!grouped[key]) {
+        grouped[key] = []
+      }
+      if (d.temp_c !== null && !isNaN(d.temp_c)) {
+        grouped[key].push(d.temp_c)
+      }
+    }
+  })
+
+  // Require 75% of 30 days = 23 days minimum
+  const MIN_DAYS = 23
+
+  return Object.entries(grouped)
+    .map(([date, temps]) => ({
+      millis: DateTime.fromISO(`${date}-01`).toMillis(),
+      date,
+      temp_c: temps.length >= MIN_DAYS ? mean(temps) : null,
+      year: +date.slice(0, 4),
+      month: +date.slice(5, 7),
+      n: temps.length
+    }))
+}
+
+function aggregateByYear(data) {
+  const grouped = {}
+  data.forEach(d => {
+    const month = +d.date.slice(5, 7)
+    // Only process data for selected months
+    if (selectedMonths.value.includes(month)) {
+      const year = d.date.slice(0, 4)
+      if (!grouped[year]) {
+        grouped[year] = []
+      }
+      if (d.temp_c !== null && !isNaN(d.temp_c)) {
+        grouped[year].push(d.temp_c)
+      }
+    }
+  })
+
+  // Calculate minimum days based on number of selected months
+  const daysPerMonth = 30
+  const totalDays = selectedMonths.value.length * daysPerMonth
+  const MIN_DAYS = Math.round(totalDays * 0.75)
+
+  return Object.entries(grouped)
+    .map(([year, temps]) => ({
+      millis: DateTime.fromISO(`${year}-01-01`).toMillis(),
+      date: `${year}-01-01`,
+      temp_c: temps.length >= MIN_DAYS ? mean(temps) : null,
+      year: +year,
+      n: temps.length
+    }))
+}
 
 async function selectBasin (basinId) {
   if (!basinId || basinId === selectedBasin.value) {
@@ -956,5 +1142,76 @@ const welcomeFeatures = [
   { icon: 'mdi-chart-line', title: 'Long-term and Seasonal Trends', description: 'Visualize changes over time and seasons' },
   { icon: 'mdi-chart-scatter-plot', title: 'Air / Water Temperature Relationships', description: 'Explore the dynamics between air and water temperatures' },
 ]
+
+// Add a ref for selected months
+const startMonth = ref(1) // Default to January
+const endMonth = ref(12) // Default to December
+
+// Keep monthOptions array as is, but add computed for selectedMonths:
+const selectedMonths = computed(() => {
+  const months = []
+  if (startMonth.value <= endMonth.value) {
+    // Simple case: just get all months between start and end
+    for (let m = startMonth.value; m <= endMonth.value; m++) {
+      months.push(m)
+    }
+  } else {
+    // Wrapping case: get months from start to 12 and 1 to end
+    for (let m = startMonth.value; m <= 12; m++) {
+      months.push(m)
+    }
+    for (let m = 1; m <= endMonth.value; m++) {
+      months.push(m)
+    }
+  }
+  return months
+})
+
+// Add the months array for the dropdown
+const monthOptions = [
+  { label: 'January', value: 1 },
+  { label: 'February', value: 2 },
+  { label: 'March', value: 3 },
+  { label: 'April', value: 4 },
+  { label: 'May', value: 5 },
+  { label: 'June', value: 6 },
+  { label: 'July', value: 7 },
+  { label: 'August', value: 8 },
+  { label: 'September', value: 9 },
+  { label: 'October', value: 10 },
+  { label: 'November', value: 11 },
+  { label: 'December', value: 12 }
+]
+
+// Add this computed property
+const timeAggregationLabel = computed(() => {
+  switch (selectedAggregation.value) {
+    case 'monthly':
+      return 'Monthly Mean'
+    case 'annual': {
+      const startLabel = monthOptions.find(m => m.value === startMonth.value).label.substring(0, 3)
+      const endLabel = monthOptions.find(m => m.value === endMonth.value).label.substring(0, 3)
+      console.log(startLabel, endLabel)
+      if (startLabel === endLabel) {
+        return `${startLabel} Mean`
+      } else if (startLabel === 'Jan' && endLabel === 'Dec') {
+        return 'Annual Mean'
+      } else {
+        return `${startLabel}-${endLabel} Mean`
+      }
+    }
+    default:
+      return 'Daily Mean'
+  }
+})
+
+function resetMonthRange() {
+  startMonth.value = 1
+  endMonth.value = 12
+}
+
+function downloadData() {
+  downloadCSV(selectedStations.value, config.value.last_updated)
+}
 
 </script>

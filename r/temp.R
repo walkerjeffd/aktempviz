@@ -575,18 +575,13 @@ export_stn <- stn |>
     by = c("dataset", "station_id")
   )
 
-# geojson
-# export_stn |> 
-#   st_as_sf(coords = c("longitude", "latitude"), crs = 4326, remove = FALSE) |>
-#   st_write("../public/data/stations.geojson", driver = "GeoJSON", delete_dsn = TRUE)
-
-# json
 export_stn |> 
   write_json("../public/data/stations.json", digits = 8)
 
 list(
   daymet = list(
     last_year = 2023
-  )
+  ),
+  last_updated = format_ISO8601(now(tz = "UTC"), usetz = TRUE)
 ) |> 
   write_json("../public/data/config.json", auto_unbox = TRUE)
