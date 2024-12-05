@@ -1,28 +1,89 @@
 <template>
   <LMap ref="map" :zoom="4" :center="[63,-150]">
     <LControlLayers position="topleft"></LControlLayers>
-    <LControl position="topright">
+    <LControl position="bottomleft" v-show="props.selected.length === 0">
       <div class="legend">
         <div class="mb-2">
           <strong>Data Source</strong>
         </div>
         <div style="" class="legend-item">
           <svg width="20" height="20">
-            <circle cx="10" cy="10" r="9" stroke="#4075b0" stroke-opacity="0.8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" fill="#4075b0" fill-opacity="0.5" ></circle>
+            <circle cx="10" cy="10" r="9" :stroke="dataSourceColors['AKTEMP']" stroke-opacity="0.8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :fill="dataSourceColors['AKTEMP']" fill-opacity="0.5" ></circle>
           </svg>
           <span class="pl-2">AKTEMP</span>
         </div>
         <div class="legend-item">
           <svg width="20" height="20">
-            <circle cx="10" cy="10" r="9" stroke="#ee8830" stroke-opacity="0.8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" fill="#ee8830" fill-opacity="0.5" ></circle>
+            <circle cx="10" cy="10" r="9" :stroke="dataSourceColors['NPS']" stroke-opacity="0.8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :fill="dataSourceColors['NPS']" fill-opacity="0.5" ></circle>
           </svg>
           <span class="pl-2">NPS</span>
         </div>
         <div class="legend-item">
           <svg width="20" height="20">
-            <circle cx="10" cy="10" r="9" stroke="#509e3d" stroke-opacity="0.8" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" fill="#509e3d" fill-opacity="0.5" ></circle>
+            <circle cx="10" cy="10" r="9" :stroke="dataSourceColors['USGS']" stroke-opacity="0.8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" :fill="dataSourceColors['USGS']" fill-opacity="0.5" ></circle>
           </svg>
           <span class="pl-2">USGS</span>
+        </div>
+      </div>
+    </LControl>
+
+    <LControl position="topright">
+      <div class="legend">
+        <div class="d-flex align-center">
+          <v-select
+            v-model="selectedBasinLayer"
+            :items="basinLayerOptions"
+            item-title="label"
+            item-value="value"
+            label="Select a Basin Layer"
+            density="compact"
+            variant="outlined"
+            clearable
+            hide-details
+            class="mr-2"
+            :width="300"
+          ></v-select>
+          <v-tooltip location="right">
+            <template v-slot:activator="{ props }">
+              <v-icon
+                v-bind="props"
+                icon="mdi-information"
+                size="small"
+                color="grey"
+                class="ml-1"
+              ></v-icon>
+            </template>
+            Select a basins layer to filter stations by watershed.
+          </v-tooltip>
+        </div>
+        <div class="d-flex align-center mt-4" v-if="selectedBasinLayer">
+          <v-autocomplete
+            :model-value="props.selectedBasin"
+            @update:model-value="emit('select-basin', $event)"
+            @click:clear="emit('select-basin', null)"
+            :items="basinOptions"
+            item-title="label"
+            item-value="value"
+            label="Select a Basin"
+            density="compact"
+            variant="outlined"
+            clearable
+            hide-details
+            class="mr-2"
+            :width="300"
+          ></v-autocomplete>
+          <v-tooltip location="right">
+            <template v-slot:activator="{ props }">
+              <v-icon
+                v-bind="props"
+                icon="mdi-information"
+                size="small"
+                color="grey"
+                class="ml-1"
+              ></v-icon>
+            </template>
+            Select a basin from this menu or on the map to see only the stations within that basin.
+          </v-tooltip>
         </div>
       </div>
     </LControl>
@@ -42,10 +103,10 @@
       v-for="station in props.stations"
       :key="station.station_id"
       :lat-lng="[station.latitude, station.longitude]"
-      :color="datasetColors[station.dataset]"
-      :fill-color="datasetColors[station.dataset]"
+      :color="props.selected.length > 0 ? 'gray': dataSourceColors[station.dataset]"
+      :fill-color="props.selected.length > 0 ? 'gray': dataSourceColors[station.dataset]"
       :radius="8"
-      :weight="props.selected.length > 0 ? 1 : 1"
+      :weight="2"
       :fill-opacity="0.25"
       pane="markerPane"
       :opacity="props.selected.length > 0 ? 0.5 : 1"
@@ -53,8 +114,12 @@
     >
       <LTooltip>
         <div>
-          <div class="text-body-1 font-weight-bold" style="max-width:400px; text-wrap:wrap;">{{ station.station_id }}</div>
-          <div>{{ station.start }} to {{ station.end }}<br>{{ station.n.toLocaleString() }} daily values</div>
+          <div class="text-body-1 font-weight-bold" style="max-width:800px; text-wrap:wrap;">Station: {{ station.station_code }}</div>
+          <div>
+            {{ station.waterbody_name }}<br>
+            {{ station.provider_name }}<br>
+            {{ station.start }} to {{ station.end }} ({{ station.n.toLocaleString() }} days)
+          </div>
         </div>
       </LTooltip>
     </LCircleMarker>
@@ -70,8 +135,17 @@
     >
       <LTooltip>
         <div>
-          <div class="text-body-1 font-weight-bold" style="max-width:300px; text-wrap:wrap;">{{ station.station_id }}</div>
-          <div>{{ station.start }} to {{ station.end }}<br>{{ station.n.toLocaleString() }} daily values</div>
+          <div class="text-body-1 font-weight-bold" style="max-width:800px; text-wrap:wrap;">Station: {{ station.station_code }}</div>
+          <div>
+            {{ station.waterbody_name }}<br>
+            {{ station.provider_name }}<br>
+            {{ station.start }} to {{ station.end }} ({{ station.n.toLocaleString() }} days)
+          </div>
+          <v-divider class="my-2"></v-divider>
+          <div class="text-caption font-weight-bold mt-2 text-left d-flex align-center">
+            <v-icon start size="small" :color="station.color">mdi-check-circle</v-icon>
+            Selected Station
+          </div>
         </div>
       </LTooltip>
     </LCircleMarker>
@@ -83,15 +157,15 @@
       :options="basinGeoJson.options"
       :options-style="basinGeoJson.style"
       pane="overlayPane"
-      @click="clickBasinLayer"
+      @click="onClickBasinLayer"
     />
     <LGeoJson
-      v-if="basinGeoJson.visible && props.selectedBasin"
-      :geojson="props.selectedBasin"
+      v-if="basinGeoJson.visible && selectedBasinGeoJson"
+      :geojson="selectedBasinGeoJson.feature"
       :options="selectedBasinOptions"
       :options-style="selectedBasinStyle"
       pane="overlayPane"
-      @click="clickBasinLayer"
+      @click="onClickBasinLayer"
     />
   </LMap>
 </template>
@@ -111,33 +185,51 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
-  basinLayer: {
-    type: String,
-    default: null
-  },
   selectedBasin: {
-    type: Object,
-    default: null
+    type: String,
+    default: () => null
   }
 })
 const emit = defineEmits(['select', 'select-basin'])
 
 const map = ref(null)
 const basinRef = ref(null)
+const selectedBasinLayer = ref(null)
 
-const datasetColors = {
-  'AKTEMP': '#4075b0',
-  'NPS': '#ee8830',
-  'USGS': '#509e3d'
+const dataSourceColors = {
+  'AKTEMP': '#1b9e77',
+  'NPS': '#d95f02',
+  'USGS': '#7570b3'
 }
 
-watch(() => props.basinLayer, loadBasinLayer, { immediate: true })
+const basinLayerOptions = ref([
+  {
+    value: 'huc4',
+    label: 'Large Basins (HUC4)'
+  },
+  {
+    value: 'huc6',
+    label: 'Medium Basins (HUC6)'
+  },
+  {
+    value: 'huc8',
+    label: 'Small Basins (HUC8)'
+  }
+])
 
 const basinGeoJson = ref({
   data: null,
   options: null,
   style: null,
   loading: false
+})
+
+const basinOptions = computed(() => {
+  if (!basinGeoJson.value.data) return []
+  return basinGeoJson.value.data.features.map(feature => ({
+    value: feature.id,
+    label: `${feature.id} - ${feature.properties.name}`
+  })).sort((a, b) => a.value.localeCompare(b.value))
 })
 
 const selectedBasinOptions = {
@@ -159,17 +251,18 @@ const selectedBasinStyle = () => {
 }
 
 function basinTooltipContent (feature) {
-  return `<span class="text-body-1 font-weight-bold">${feature.properties.name}</span><br>HUC: ${feature.id}`
+  return `<span class="text-body-1 font-weight-bold">Basin: ${feature.properties.name}</span><br>HUC${feature.id.length}: ${feature.id}`
 }
 
+watch(() => selectedBasinLayer.value, loadBasinLayer)
 async function loadBasinLayer (basinLayer) {
   if (!basinLayer) {
-    // basinGeoJson.value.visible = false
-    emit('select-basin')
+    basinGeoJson.value.visible = false
+    emit('select-basin', null)
     return
   }
   basinGeoJson.value.loading = true
-  emit('select-basin')
+  emit('select-basin', null)
   const response = await fetch(`data/gis/wbd_${basinLayer}.geojson`)
   const data = await response.json()
   basinGeoJson.value.data = data
@@ -207,10 +300,16 @@ async function loadBasinLayer (basinLayer) {
   basinGeoJson.value.loading = false
 }
 
-function clickBasinLayer (evt) {
+const selectedBasinGeoJson = computed(() => {
+  if (!basinGeoJson.value.data) return null
+  const feature = basinGeoJson.value.data.features.find(feature => feature.id === props.selectedBasin)
+  return feature ? { feature } : null
+})
+
+function onClickBasinLayer (evt) {
   const feature = evt.layer.feature
   evt.layer.bringToFront()
-  emit('select-basin', feature)
+  emit('select-basin', feature.id)
 }
 
 </script>

@@ -1,3 +1,5 @@
+import { DateTime } from 'luxon'
+
 export function tooltipFormatter ({ station_id, date, temp_c, airtemp_c }) {
   return `<table>
     <tbody>
@@ -7,7 +9,7 @@ export function tooltipFormatter ({ station_id, date, temp_c, airtemp_c }) {
       </tr>
       <tr>
         <td class="pr-2 text-right">Date</td>
-        <td><b>${date}</b></td>
+        <td><b>${DateTime.fromISO(date, { zone: 'US/Alaska' }).toFormat('MMM d, yyyy')}</b></td>
       </tr>
       <tr>
         <td class="pr-2 text-right">Water Temp</td>

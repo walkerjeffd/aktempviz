@@ -6,6 +6,7 @@
 
 // Plugins
 import './leaflet'
+import './driver'
 
 import vuetify from './vuetify'
 import highcharts from './highcharts'

@@ -1,8 +1,10 @@
 <template>
   <highcharts :constructor-type="'stockChart'" :options="settings" ref="chartEl"></highcharts>
 </template>
+
 <script setup>
 import { onMounted, watch } from 'vue'
+import { DateTime } from 'luxon'
 
 const props = defineProps(['series', 'loading'])
 const emit = defineEmits(['zoom'])
@@ -39,7 +41,6 @@ function update () {
   window.chart = chart
 
   const nPrevious = chart.series.length
-
   const series = props.series.map(s => {
     return {
       ...s,
@@ -74,10 +75,9 @@ function tooltipFormatter(date, points) {
       <td style="text-align: right; font-weight: bold;">${d.point.temp_c?.toFixed(1)}</td>
     </tr>
   `).join('');
-
   return `
     <div style="">
-      <div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; color: #333;">${new Date(date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+      <div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; color: #333;">${DateTime.fromISO(date, { zone: 'US/Alaska' }).toFormat('MMMM d, yyyy')}</div>
       <table style="border-collapse: separate; border-spacing: 0 6px; font-size: 14px;">
         <thead>
           <tr>
@@ -94,28 +94,34 @@ function tooltipFormatter(date, points) {
 
 const settings = {
   chart: {
-    height: 500,
+    height: 470,
     marginLeft: 70,
     zoomType: 'x',
     boost: {
       enabled: false
     }
   },
+  time: {
+    timezone: 'US/Alaska'
+  },
   title: {
-    text: 'Timeseries'
+    text: null
   },
   plotOptions: {
     series: {
-      gapSize: 1,
+      gapSize: 2,
+      dataGrouping: {
+        enabled: false
+      },
       marker: {
         symbol: 'circle',
         radius: 2
       },
-      lineWidth: 1,
+      lineWidth: 2
     },
   },
   lang: {
-    noData: 'No data to display'
+    noData: 'Select a station to view data'
   },
   noData: {
     style: {
@@ -144,7 +150,7 @@ const settings = {
     }
   },
   scrollbar: {
-    liveRedraw: true // enable for interactive filtering
+    liveRedraw: false // enable for interactive filtering
   },
   navigator: {
     adaptToUpdatedData: false,
@@ -180,6 +186,7 @@ const settings = {
   xAxis: {
     ordinal: false,
     minRange: 24 * 3600 * 1000,
+    gridLineWidth: 1,
     events: {
       afterSetExtremes: onTimeFilter
     }
