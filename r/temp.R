@@ -21,16 +21,38 @@ datasets <- bind_rows(
   .id = "dataset"
 )
 
+wbd <- read_rds("data/wbd.rds")
+
 # stations ----------------------------------------------------------------
 
 stn <- datasets |> 
   select(-data)
 
+stn_sf <- stn |>
+  st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
 tabyl(stn, dataset)
-stn |>
-  st_as_sf(coords = c("longitude", "latitude"), crs = 4326) |>
+stn_sf |>
   mapview::mapview(zcol = "dataset", layer.name = "data source")
 
+
+# basins ------------------------------------------------------------------
+
+stn_wbd <- stn_sf |> 
+  st_join(
+    wbd$huc4 |> 
+      select(huc4)
+  ) |> 
+  st_join(
+    wbd$huc6 |> 
+      select(huc6)
+  ) |> 
+  st_join(
+    wbd$huc8 |> 
+      select(huc8)
+  ) |> 
+  st_drop_geometry() |> 
+  select(dataset, station_id, huc4, huc6, huc8)
 
 # daily data --------------------------------------------------------------
 
@@ -229,23 +251,23 @@ daymet_stn_year_data |>
 daymet_stn_year_data <- read_rds("data/daymet_stn_year_data.rds")
 
 # re-download tiles that failed
-daymet_stn_year_data |>
-  mutate(
-    error = map_lgl(daymet, is.null)
-  ) |>
-  filter(error) |>
-  distinct(tile_id, year) |>
-  rowwise() |>
-  mutate(
-    filename = list({
-      unlink(file.path("data/daymet", glue("tmax_{year}_{tile_id}.tif")))
-      unlink(file.path("data/daymet", glue("tmax_{year}_{tile_id}.tif.aux.json")))
-      unlink(file.path("data/daymet", glue("tmin_{year}_{tile_id}.tif")))
-      unlink(file.path("data/daymet", glue("tmin_{year}_{tile_id}.tif.aux.json")))
-      possibly_download_daymet_tile(tile_id, year, "tmin", force = TRUE)
-      possibly_download_daymet_tile(tile_id, year, "tmax", force = TRUE)
-    })
-  )
+# daymet_stn_year_data |>
+#   mutate(
+#     error = map_lgl(daymet, is.null)
+#   ) |>
+#   filter(error) |>
+#   distinct(tile_id, year) |>
+#   rowwise() |>
+#   mutate(
+#     filename = list({
+#       unlink(file.path("data/daymet", glue("tmax_{year}_{tile_id}.tif")))
+#       unlink(file.path("data/daymet", glue("tmax_{year}_{tile_id}.tif.aux.json")))
+#       unlink(file.path("data/daymet", glue("tmin_{year}_{tile_id}.tif")))
+#       unlink(file.path("data/daymet", glue("tmin_{year}_{tile_id}.tif.aux.json")))
+#       possibly_download_daymet_tile(tile_id, year, "tmin", force = TRUE)
+#       possibly_download_daymet_tile(tile_id, year, "tmax", force = TRUE)
+#     })
+#   )
 
 daymet_stn_year_data |> 
   select(dataset, station_id, daymet) |>
@@ -543,6 +565,10 @@ export_temp <- temp |>
   print()
 
 export_stn <- stn |> 
+  left_join(
+    stn_wbd,
+    by = c("dataset", "station_id")
+  ) |> 
   inner_join(
     export_temp |> 
       select(-data),
@@ -550,9 +576,9 @@ export_stn <- stn |>
   )
 
 # geojson
-export_stn |> 
-  st_as_sf(coords = c("longitude", "latitude"), crs = 4326, remove = FALSE) |>
-  st_write("../public/data/stations.geojson", driver = "GeoJSON", delete_dsn = TRUE)
+# export_stn |> 
+#   st_as_sf(coords = c("longitude", "latitude"), crs = 4326, remove = FALSE) |>
+#   st_write("../public/data/stations.geojson", driver = "GeoJSON", delete_dsn = TRUE)
 
 # json
 export_stn |> 
@@ -560,7 +586,7 @@ export_stn |>
 
 list(
   daymet = list(
-    last_year = 2024
+    last_year = 2023
   )
 ) |> 
   write_json("../public/data/config.json", auto_unbox = TRUE)
