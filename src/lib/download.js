@@ -1,7 +1,7 @@
 import Papa from 'papaparse'
 import { DateTime } from 'luxon'
 import { saveAs } from 'file-saver'
-import { uniq } from 'lodash-es'
+import { uniq } from 'lodash'
 
 function concatItems (items) {
   if (items.length === 1) {

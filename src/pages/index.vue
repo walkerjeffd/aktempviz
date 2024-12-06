@@ -1,7 +1,7 @@
 <template>
   <v-app-bar color="primary" density="compact">
-    <v-app-bar-title>AKTEMP-VIZ | Stream Temperature Data Visualizations</v-app-bar-title>
-    <v-spacer></v-spacer>
+    <v-app-bar-title>AKTEMP<span class="text-caption">VIZ</span> | Stream Temperature Data Visualization Tool</v-app-bar-title>
+
     <v-btn
       color="white"
       variant="text"
@@ -35,6 +35,7 @@
       variant="outlined"
       href="https://aktemp.uaa.alaska.edu"
       target="_blank"
+      size="small"
     >
       <v-icon start>mdi-arrow-left</v-icon>
       Back to AKTEMP
@@ -121,7 +122,7 @@
     <v-row>
       <!-- Stations -->
       <v-col :cols="lgAndUp && isCollapsed ? '1' : '12'" :lg="lgAndUp && isCollapsed ? '1' : '5'" :xl="lgAndUp && isCollapsed ? '1' : '4'">
-        <v-card :elevation="4">
+        <v-card :elevation="4" :loading="loadingStations">
           <v-toolbar color="grey-lighten-2" flat density="compact">
             <template v-if="!lgAndUp || !isCollapsed">
               <v-toolbar-title>Stations</v-toolbar-title>
@@ -200,7 +201,7 @@
                     class="mb-2"
                   >
                     <div class="d-flex mb-n2">
-                      <div class="font-weight-bold">{{ station.station_code }}: {{ station.waterbody_name || 'Unknown Waterbody' }}</div>
+                      <div class="font-weight-bold">{{ station.provider_station_code }}:{{ station.waterbody_name || 'Unknown Waterbody' }}</div>
                       <v-spacer></v-spacer>
                       <v-btn
                         icon="mdi-close"
@@ -377,7 +378,6 @@
                 v-model="selectedStations"
                 :headers="headers"
                 :items="filteredStations"
-                :loading="loading"
                 items-per-page-text="# per Page"
                 :items-per-page-options="[5, 10, 25, 50, 100, -1]"
                 density="compact"
@@ -409,7 +409,7 @@
         <v-row class="mb-0">
           <v-col cols="12">
             <!-- Time Series -->
-            <v-card data-step="timeseries" :elevation="4">
+            <v-card data-step="timeseries" :elevation="4" :loading="loadingData">
               <v-toolbar color="grey-lighten-2" flat density="compact">
                 <v-toolbar-title>Time Series</v-toolbar-title>
                 <v-spacer></v-spacer>
@@ -443,14 +443,16 @@
                   </v-card>
                 </v-dialog>
               </v-toolbar>
-              <div class="d-flex mx-4 my-2 flex-wrap justify-space-between">
-                <div class="d-flex align-center mr-8">
+              <div class="d-flex mx-4 align-center flex-wrap">
+                <div class="d-flex align-center my-2 mr-2">
                   <div class="text-subtitle-2 mr-2">Average By:</div>
                   <v-btn-toggle
                     v-model="selectedAggregation"
                     density="compact"
                     class="mx-2"
                     variant="outlined"
+                    mandatory
+                    style="height:42px;"
                   >
                     <v-btn
                       v-for="agg in aggregationOptions"
@@ -461,8 +463,11 @@
                     </v-btn>
                   </v-btn-toggle>
                 </div>
-                <div class="d-flex align-center">
-                  <div class="text-subtitle-2 mr-2">Include Months:</div>
+                <div class="d-flex align-center my-2 mr-2" v-if="selectedAggregation === 'season'">
+                  <div class="text-subtitle-2 mr-2">
+                    <v-icon start>mdi-arrow-right</v-icon>
+                    Define Season:
+                  </div>
                   <v-select
                     v-model="startMonth"
                     :items="monthOptions"
@@ -488,36 +493,30 @@
                     variant="outlined"
                     hide-details
                   ></v-select>
-                  <v-btn
-                    icon="mdi-sync"
-                    variant="text"
-                    size="x-small"
-                    @click="resetMonthRange"
+                </div>
+                <v-spacer></v-spacer>
+                <div class="d-flex align-center my-2 text-caption" v-if="selectedAggregation !== 'day'">
+                  <v-alert
+                    color="grey-darken-2"
+                    density="compact"
+                    class="text-caption"
+                    variant="tonal"
                   >
-                    <v-icon>mdi-sync</v-icon>
-                    <v-tooltip activator="parent" location="bottom">Reset to January - December</v-tooltip>
-                  </v-btn>
+                    <v-icon start>mdi-alert</v-icon>
+                    Only
+                    <span v-if="selectedAggregation === 'month'">months</span>
+                    <span v-else>years</span>
+                    with at least 75% of daily values <span v-if="selectedAggregation === 'season'">during the selected season</span> are shown.
+                  </v-alert>
                 </div>
               </div>
-              <v-alert
-                v-if="selectedAggregation !== 'daily'"
-                color="grey-darken-2"
-                density="compact"
-                class="mx-4 my-2 text-caption"
-                variant="tonal"
-              >
-                <v-icon start>mdi-alert</v-icon>
-                <span v-if="selectedAggregation === 'monthly'">Months</span>
-                <span v-else>Years</span>
-                missing more than 10% of daily values <span v-if="selectedAggregation === 'annual'">across all selected months</span> are not shown.
-              </v-alert>
 
               <v-divider></v-divider>
 
               <div class="mx-4">
                 <TimeseriesChart
-                  :series="series"
-                  :loading="loading"
+                  :series="aggregatedSeries"
+                  :loading="loadingData"
                   :aggregation="selectedAggregation"
                   :aggregation-label="timeAggregationLabel"
                   @zoom="onTimeseriesZoom"
@@ -547,7 +546,7 @@
         <v-row class="mt-0">
           <v-col cols="12" md="6">
             <!-- Seasonality -->
-            <v-card data-step="seasonal" :elevation="4">
+            <v-card data-step="seasonal" :elevation="4" :loading="loadingData">
               <v-toolbar color="grey-lighten-2" flat density="compact">
                 <v-toolbar-title>Seasonality</v-toolbar-title>
                 <v-spacer></v-spacer>
@@ -578,12 +577,12 @@
                   </v-card>
                 </v-dialog>
               </v-toolbar>
-              <SeasonalChart :series="filteredSeries" :loading="loading" />
+              <SeasonalChart :series="dailyFilteredSeries" :loading="loadingData" />
             </v-card>
           </v-col>
           <v-col cols="12" md="6">
             <!-- Air vs Water Temp -->
-            <v-card data-step="scatter" :elevation="4">
+            <v-card data-step="scatter" :elevation="4" :loading="loadingData">
               <v-toolbar color="grey-lighten-2" flat density="compact">
                 <div class="flex-grow-1 pl-4">
                   <v-toolbar-title>Air vs Water Scatterplot</v-toolbar-title>
@@ -614,10 +613,7 @@
                   </v-card>
                 </v-dialog>
               </v-toolbar>
-              <div class="px-4 py-2">
-                <p class="text-caption">Note: Air temp. data only available through calendar year {{ config.daymet.last_year }}. More recent water temperature data not shown. <a href="#" @click.prevent="showScatterHelp = true">More info</a></p>
-              </div>
-              <ScatterChart :series="filteredSeries" :loading="loading" />
+              <ScatterChart :series="dailyFilteredSeries" :loading="loadingData" :config="config" />
             </v-card>
           </v-col>
         </v-row>
@@ -627,11 +623,12 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, watch, nextTick } from 'vue'
 import { DateTime } from 'luxon'
 import { driver } from 'driver.js'
 import { useDisplay } from 'vuetify'
-import { debounce, mean } from 'lodash-es'
+import { groups } from 'd3-array'
+import { debounce, mean } from 'lodash'
 
 import StationMap from '@/components/StationMap'
 import TimeseriesChart from '@/components/TimeseriesChart'
@@ -642,7 +639,8 @@ import { downloadCSV } from '@/lib/download'
 const { width, lgAndUp } = useDisplay()
 
 // REFS
-const loading = ref(false)
+const loadingStations = ref(false)
+const loadingData = ref(false)
 const isCollapsed = ref(false)
 
 const showWelcome = ref(true)
@@ -711,7 +709,7 @@ const activeFilters = computed(() => {
   if (filterCount.value) {
     filters.push({
       type: 'count',
-      label: '# Values >= ',
+      label: 'Count >= ',
       value: filterCount.value
     })
   }
@@ -776,18 +774,6 @@ const filteredStations = computed(() => {
   })
 })
 
-const filteredSeries = computed(() => {
-  return series.value.map(s => {
-    return {
-      ...s,
-      data: s.data.filter(d => {
-        if (!timeRange.value) return true
-        return d.millis >= (timeRange.value[0]).valueOf() && d.millis <= (timeRange.value[1]).valueOf()
-      })
-    }
-  })
-})
-
 // TABLE
 const headers = [
   {
@@ -826,7 +812,7 @@ const headers = [
     width: '20px'
   },
   {
-    title: '# Values',
+    title: 'Count',
     sortable: true,
     align: 'end',
     value: 'n',
@@ -872,15 +858,15 @@ async function selectStation (station) {
   }
 }
 
-const selectedAggregation = ref('daily')
+const selectedAggregation = ref('day')
 
 const aggregationOptions = [
-  { label: 'Day', value: 'daily' },
-  { label: 'Month', value: 'monthly' },
-  { label: 'Season/Year', value: 'annual' }
+  { label: 'Day', value: 'day' },
+  { label: 'Month', value: 'month' },
+  { label: 'Season', value: 'season' }
 ]
 
-const series = computed(() => {
+const dailySeries = computed(() => {
   return selectedStations.value.map(station => {
     const rawData = station.data.map(d => ({
       millis: DateTime.fromISO(d.date, { zone: 'US/Alaska' }).toMillis(),
@@ -892,17 +878,41 @@ const series = computed(() => {
       station_id: station.provider_station_code
     }))
 
+    return {
+      station_id: `${station.provider_station_code}:${station.waterbody_name}`,
+      color: station.color,
+      station,
+      showInNavigator: true,
+      data: rawData
+    }
+  })
+})
+
+const dailyFilteredSeries = computed(() => {
+  return dailySeries.value.map(s => {
+    return {
+      ...s,
+      data: s.data.filter(d => {
+        if (!timeRange.value) return true
+        return d.millis >= (timeRange.value[0]).valueOf() && d.millis <= (timeRange.value[1]).valueOf()
+      })
+    }
+  })
+})
+
+const aggregatedSeries = computed(() => {
+  return dailySeries.value.map(series => {
+    const { data, station } = series
     let aggregatedData
     switch (selectedAggregation.value) {
-      case 'monthly':
-        aggregatedData = aggregateByMonth(rawData)
+      case 'month':
+        aggregatedData = aggregateByMonth(station.provider_station_code, data)
         break
-      case 'annual':
-        aggregatedData = aggregateByYear(rawData)
+      case 'season':
+        aggregatedData = aggregateBySeason(station.provider_station_code, data, selectedMonths.value)
         break
       default:
-        // Filter daily data by selected months
-        aggregatedData = rawData.filter(d => selectedMonths.value.includes(d.month))
+        aggregatedData = data
     }
 
     return {
@@ -915,65 +925,38 @@ const series = computed(() => {
   })
 })
 
-function aggregateByMonth(data) {
-  const grouped = {}
-  data.forEach(d => {
-    const month = +d.date.slice(5, 7)
-    // Only process data for selected months
-    if (selectedMonths.value.includes(month)) {
-      const key = d.date.slice(0, 7) // YYYY-MM
-      if (!grouped[key]) {
-        grouped[key] = []
-      }
-      if (d.temp_c !== null && !isNaN(d.temp_c)) {
-        grouped[key].push(d.temp_c)
-      }
-    }
-  })
-
+function aggregateByMonth(station_id, data) {
   // Require 75% of 30 days = 23 days minimum
   const MIN_DAYS = 23
 
-  return Object.entries(grouped)
-    .map(([date, temps]) => ({
-      millis: DateTime.fromISO(`${date}-01`).toMillis(),
-      date,
-      temp_c: temps.length >= MIN_DAYS ? mean(temps) : null,
-      year: +date.slice(0, 4),
-      month: +date.slice(5, 7),
-      n: temps.length
-    }))
+  const grouped = groups(data, d => d.date.slice(0, 7))
+  return grouped.map(([date, temps]) => ({
+    station_id,
+    millis: DateTime.fromISO(`${date}-01`).toMillis(),
+    date,
+    temp_c: temps.length >= MIN_DAYS ? mean(temps.map(d => d.temp_c)) : null,
+    year: +date.slice(0, 4),
+    n: temps.length
+  }))
 }
 
-function aggregateByYear(data) {
-  const grouped = {}
-  data.forEach(d => {
-    const month = +d.date.slice(5, 7)
-    // Only process data for selected months
-    if (selectedMonths.value.includes(month)) {
-      const year = d.date.slice(0, 4)
-      if (!grouped[year]) {
-        grouped[year] = []
-      }
-      if (d.temp_c !== null && !isNaN(d.temp_c)) {
-        grouped[year].push(d.temp_c)
-      }
-    }
-  })
-
+function aggregateBySeason(station_id, data, months) {
   // Calculate minimum days based on number of selected months
   const daysPerMonth = 30
   const totalDays = selectedMonths.value.length * daysPerMonth
   const MIN_DAYS = Math.round(totalDays * 0.75)
 
-  return Object.entries(grouped)
-    .map(([year, temps]) => ({
-      millis: DateTime.fromISO(`${year}-01-01`).toMillis(),
-      date: `${year}-01-01`,
-      temp_c: temps.length >= MIN_DAYS ? mean(temps) : null,
-      year: +year,
-      n: temps.length
-    }))
+  const seasonData = data.filter(d => months.includes(+d.date.slice(5, 7)))
+  const grouped = groups(seasonData, d => d.date.slice(0, 4))
+
+  return grouped.map(([year, temps]) => ({
+    station_id,
+    millis: DateTime.fromISO(`${year}-01-01`).toMillis(),
+    date: `${year}-01-01`,
+    temp_c: temps.length >= MIN_DAYS ? mean(temps.map(d => d.temp_c)) : null,
+    year: +year,
+    n: temps.length
+  }))
 }
 
 async function selectBasin (basinId) {
@@ -1013,7 +996,7 @@ async function fetchConfig() {
 }
 
 async function fetchStations() {
-  loading.value = true
+  loadingStations.value = true
   try {
     const response = await fetch(`data/stations.json`)
     if (!response.ok) {
@@ -1027,26 +1010,33 @@ async function fetchStations() {
     alert('Error loading stations')
     return []
   } finally {
-    loading.value = false
+    loadingStations.value = false
   }
+}
+
+async function sleep (ms) {
+  await new Promise(resolve => setTimeout(resolve, ms))
 }
 
 async function fetchData(station) {
   if (station.data) return station.data
-  loading.value = true
+  loadingData.value = true
+  await nextTick()
+
   try {
     const response = await fetch(`data/stations/${station.filename}`)
     if (!response.ok) {
       alert(`Error loading data for station ${station.provider_station_code}`)
       return []
     }
-    const json = await response.json()
-    return json
+    await sleep(100)
+    return await response.json()
   } catch (error) {
+    console.error(error)
     alert(`Error loading data for station ${station.provider_station_code}`)
     return []
   } finally {
-    loading.value = false
+    loadingData.value = false
   }
 }
 
@@ -1143,11 +1133,9 @@ const welcomeFeatures = [
   { icon: 'mdi-chart-scatter-plot', title: 'Air / Water Temperature Relationships', description: 'Explore the dynamics between air and water temperatures' },
 ]
 
-// Add a ref for selected months
-const startMonth = ref(1) // Default to January
-const endMonth = ref(12) // Default to December
+const startMonth = ref(6) // Default to June
+const endMonth = ref(8) // Default to August
 
-// Keep monthOptions array as is, but add computed for selectedMonths:
 const selectedMonths = computed(() => {
   const months = []
   if (startMonth.value <= endMonth.value) {
@@ -1186,29 +1174,17 @@ const monthOptions = [
 // Add this computed property
 const timeAggregationLabel = computed(() => {
   switch (selectedAggregation.value) {
-    case 'monthly':
+    case 'month':
       return 'Monthly Mean'
-    case 'annual': {
+    case 'season': {
       const startLabel = monthOptions.find(m => m.value === startMonth.value).label.substring(0, 3)
       const endLabel = monthOptions.find(m => m.value === endMonth.value).label.substring(0, 3)
-      console.log(startLabel, endLabel)
-      if (startLabel === endLabel) {
-        return `${startLabel} Mean`
-      } else if (startLabel === 'Jan' && endLabel === 'Dec') {
-        return 'Annual Mean'
-      } else {
-        return `${startLabel}-${endLabel} Mean`
-      }
+      return `${startLabel}-${endLabel} Mean`
     }
     default:
       return 'Daily Mean'
   }
 })
-
-function resetMonthRange() {
-  startMonth.value = 1
-  endMonth.value = 12
-}
 
 function downloadData() {
   downloadCSV(selectedStations.value, config.value.last_updated)

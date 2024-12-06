@@ -20,15 +20,18 @@ watch(() => props.loading, toggleLoading)
 watch(() => [props.aggregation, props.aggregationLabel], () => {
   if (chartEl.value?.chart) {
     chartEl.value.chart.series.forEach(s => {
-      s.update({
-        marker: {
-          enabled: props.aggregation !== 'daily'
-        }
-      }, false)
+      if (s.navigatorSeries) {
+        s.update({
+          marker: {
+            enabled: props.aggregation !== 'day'
+          }
+        }, false)
+      }
     })
+    console.log(`${props.aggregationLabel}<br>Water Temperature (°C)`)
     chartEl.value.chart.redraw()
     chartEl.value.chart.yAxis[0].setTitle({
-      text: yAxisTitle.value
+      text: `${props.aggregationLabel}<br>Water Temperature (°C)`
     })
   }
 })
@@ -59,8 +62,6 @@ function update () {
   const chart = chartEl.value.chart
   if (!chart || !props.series) return
 
-  window.chart = chart
-
   const nPrevious = chart.series.length
   const series = props.series.map(s => {
     return {
@@ -68,7 +69,7 @@ function update () {
       name: s.station_id,
       showInNavigator: true,
       marker: {
-        enabled: props.aggregation !== 'daily'
+        enabled: props.aggregation !== 'day'
       },
       data: s.data.map(d => ({
         ...d,
@@ -79,10 +80,16 @@ function update () {
   })
 
   chart.update({
-    series: []
+    series: [],
+    tooltip: {
+      enabled: false
+    }
   }, true, true)
   chart.update({
-    series
+    series,
+    tooltip: {
+      enabled: true
+    }
   }, true, true)
 
   if (nPrevious === 0) {

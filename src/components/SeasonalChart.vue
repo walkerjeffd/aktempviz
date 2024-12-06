@@ -1,13 +1,18 @@
 <template>
   <div>
-    <div class="px-4 d-flex align-center justify-end">
-      <v-switch
+    <div class="d-flex align-center px-4 my-2">
+      <div class="text-subtitle-2 mr-2">Display As:</div>
+      <v-btn-toggle
         v-model="showIndividualYears"
-        label="Show Individual Years"
-        hide-details
-        color="primary"
-      ></v-switch>
+        density="compact"
+        variant="outlined"
+        style="height:40px;"
+      >
+        <v-btn :value="false">Mean & Range</v-btn>
+        <v-btn :value="true">Individual Years</v-btn>
+      </v-btn-toggle>
     </div>
+    <v-divider class="mb-2"></v-divider>
     <highcharts :options="settings" ref="chartEl"></highcharts>
   </div>
 </template>
@@ -17,7 +22,6 @@ import { onMounted, watch, ref } from 'vue'
 import { groups } from 'd3-array'
 import { DateTime } from 'luxon'
 import * as HighchartsLib from 'highcharts'
-import { tooltipFormatter } from '@/lib/utils'
 
 const props = defineProps(['series', 'loading'])
 const chartEl = ref(null)
@@ -40,6 +44,29 @@ function toggleLoading (loading) {
   } else {
     chart.hideLoading()
   }
+}
+
+function tooltipFormatter ({ station_id, date, temp_c }) {
+  return `<table>
+    <tbody>
+      <tr>
+        <td class="pr-2 text-right">Station</td>
+        <td><b>${station_id}</b></td>
+      </tr>
+      <tr>
+        <td class="pr-2 text-right">Day of Year</td>
+        <td><b>${DateTime.fromISO(date, { zone: 'US/Alaska' }).toFormat('MMMM d')}</b></td>
+      </tr>
+      <tr>
+        <td class="pr-2 text-right">Year</td>
+        <td><b>${DateTime.fromISO(date, { zone: 'US/Alaska' }).toFormat('yyyy')}</b></td>
+      </tr>
+      <tr>
+        <td class="pr-2 text-right">Water Temp</td>
+        <td><b>${temp_c?.toFixed(1) + '°C'} </b></td>
+      </tr>
+    </tbody>
+  </table>`
 }
 
 function julianDay (dateString) {
@@ -73,7 +100,8 @@ function update() {
           data: d[1].map(d => ({
             ...d,
             x: julianDay(d.date),
-            y: d.temp_c
+            y: d.temp_c,
+            label: s.station.provider_station_code
           })),
           linkedTo: i > 0 ? ':previous' : undefined
         }
@@ -113,7 +141,8 @@ function update() {
           y: mean,
           low: min,
           high: max,
-          n: temps.length
+          n: temps.length,
+          label: s.station.provider_station_code
         }
       }).filter(d => d !== null).sort((a, b) => a.x - b.x)
 
@@ -135,7 +164,12 @@ function update() {
         zIndex: 0,
         linkedTo: ':previous',
         enableMouseTracking: false,
-        data: data.map(point => [point.x, point.low, point.high])
+        data: data.map(point => ({
+          x: point.x,
+          low: point.low,
+          high: point.high,
+          label: s.station.provider_station_code
+        }))
       }
 
       return [lineSeries, rangeSeries]
@@ -154,7 +188,7 @@ const settings = {
     animation: false,
   },
   lang: {
-    noData: 'Select a station to view data'
+    noData: 'No data to display'
   },
   plotOptions: {
     series: {
@@ -216,12 +250,47 @@ const settings = {
       if (this.series.type === 'arearange') return false
       const point = this.point
       if (showIndividualYears.value) {
-        return tooltipFormatter(point)
+        return `<table>
+                  <tbody>
+                    <tr>
+                      <td class="pr-2 text-right">Station</td>
+                      <td><b>${point.label}</b></td>
+                    </tr>
+                    <tr>
+                      <td class="pr-2 text-right">Day of Year</td>
+                      <td><b>${DateTime.fromISO(point.date, { zone: 'US/Alaska' }).toFormat('MMMM d')}</b></td>
+                    </tr>
+                    <tr>
+                      <td class="pr-2 text-right">Year</td>
+                      <td><b>${DateTime.fromISO(point.date, { zone: 'US/Alaska' }).toFormat('yyyy')}</b></td>
+                    </tr>
+                    <tr>
+                      <td class="pr-2 text-right">Water Temp</td>
+                      <td><b>${point.y.toFixed(1)}°C</b></td>
+                    </tr>
+                  </tbody>
+                </table>`
       } else {
-        return `<b>${this.series.name}</b><br/>
-                Date: ${HighchartsLib.dateFormat('%b %e', new Date(2023, 0, point.x))}<br/>
-                Mean: ${point.y.toFixed(1)}°C<br/>
-                Range: ${point.low.toFixed(1)} - ${point.high.toFixed(1)}°C`
+        return `<table>
+                  <tbody>
+                    <tr>
+                      <td class="pr-2 text-right">Station</td>
+                      <td><b>${point.label}</b></td>
+                    </tr>
+                    <tr>
+                      <td class="pr-2 text-right">Day of Year</td>
+                      <td><b>${HighchartsLib.dateFormat('%B %e', new Date(2023, 0, point.x))}</b></td>
+                    </tr>
+                    <tr>
+                      <td class="pr-2 text-right">Mean</td>
+                      <td><b>${point.y.toFixed(1)}°C</b></td>
+                    </tr>
+                    <tr>
+                      <td class="pr-2 text-right">Range</td>
+                      <td><b>${point.low.toFixed(1)} - ${point.high.toFixed(1)}°C</b></td>
+                    </tr>
+                  </tbody>
+                </table>`
       }
     }
   }

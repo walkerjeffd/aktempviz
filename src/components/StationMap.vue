@@ -114,7 +114,7 @@
     >
       <LTooltip>
         <div>
-          <div class="text-body-1 font-weight-bold" style="max-width:800px; text-wrap:wrap;">Station: {{ station.station_code || 'Unknown' }}</div>
+          <div class="text-body-1 font-weight-bold" style="max-width:800px; text-wrap:wrap;">{{ station.provider_station_code || 'Unknown' }}</div>
           <div>
             {{ station.waterbody_name || 'Unknown waterbody' }}<br>
             {{ station.provider_name || 'Unknown provider' }}<br>
@@ -135,7 +135,7 @@
     >
       <LTooltip>
         <div>
-          <div class="text-body-1 font-weight-bold" style="max-width:800px; text-wrap:wrap;">Station: {{ station.station_code }}</div>
+          <div class="text-body-1 font-weight-bold" style="max-width:800px; text-wrap:wrap;">{{ station.provider_station_code || 'Unknown' }}</div>
           <div>
             {{ station.waterbody_name }}<br>
             {{ station.provider_name }}<br>

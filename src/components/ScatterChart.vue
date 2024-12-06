@@ -1,15 +1,48 @@
 <template>
-  <highcharts :options="settings" ref="chartEl"></highcharts>
+  <div class="pt-2">
+    <div class="d-flex align-center mx-4">
+      <div class="d-flex align-center mr-4">
+        <div class="text-subtitle-2 mr-2" style="white-space: nowrap;">Min. Air Temp. (°C):</div>
+        <div>
+          <v-text-field
+            type="number"
+            v-model.number="minAirTemp"
+            step="1"
+            width="80px"
+            density="compact"
+            variant="outlined"
+            hide-details
+          />
+        </div>
+      </div>
+      <v-spacer></v-spacer>
+      <div class="d-flex align-center text-caption">
+        <v-alert
+          color="grey-darken-2"
+          density="compact"
+          class="text-caption"
+          variant="tonal"
+        >
+          <v-icon start>mdi-alert</v-icon>
+          Note: Air temp. data only available through {{ config.daymet.last_year }}.
+        </v-alert>
+      </div>
+    </div>
+    <v-divider class="my-2"></v-divider>
+    <highcharts :options="settings" ref="chartEl"></highcharts>
+  </div>
 </template>
 
 <script setup>
 import { onMounted, watch, ref } from 'vue'
-import { tooltipFormatter } from '@/lib/utils'
+import { DateTime } from 'luxon'
 
-const props = defineProps(['series', 'loading'])
+const props = defineProps(['series', 'loading', 'config'])
+
 const chartEl = ref(null)
+const minAirTemp = ref(-10)
 
-watch(() => props.series, update)
+watch(() => [props.series, minAirTemp.value], update)
 watch(() => props.loading, toggleLoading)
 
 onMounted(() => {
@@ -25,6 +58,29 @@ function toggleLoading (loading) {
   } else {
     chart.hideLoading()
   }
+}
+
+function tooltipFormatter ({ station_id, date, temp_c, airtemp_c }) {
+  return `<table>
+    <tbody>
+      <tr>
+        <td class="pr-2 text-right">Station</td>
+        <td><b>${station_id}</b></td>
+      </tr>
+      <tr>
+        <td class="pr-2 text-right">Date</td>
+        <td><b>${DateTime.fromISO(date, { zone: 'US/Alaska' }).toFormat('MMMM d, yyyy')}</b></td>
+      </tr>
+      <tr>
+        <td class="pr-2 text-right">Water Temp</td>
+        <td><b>${temp_c?.toFixed(1) + '°C'} </b></td>
+      </tr>
+      <tr>
+        <td class="pr-2 text-right">Air Temp</td>
+        <td><b>${airtemp_c?.toFixed(1) + '°C'} </b></td>
+      </tr>
+    </tbody>
+  </table>`
 }
 
 function update () {
@@ -52,12 +108,12 @@ function update () {
     series.push({
       type: 'line',
       name: '1:1 Line',
-      data: [[minTemp, minTemp], [maxTemp, maxTemp]],
+      data: [[0, 0], [maxTemp, maxTemp]],
       color: '#000000',
       lineWidth: 2,
       dashStyle: 'dash',
       enableMouseTracking: false,
-      showInLegend: true
+      showInLegend: false
     })
   }
 
@@ -66,11 +122,17 @@ function update () {
       ...s,
       name: s.station_id,
       opacity: opacity > 0.9 ? 0.9 : opacity,
-      data: s.data.filter(d => d.airtemp_c !== undefined && d.temp_c !== undefined).map(d => ({
-        ...d,
-        x: d.airtemp_c,
-        y: d.temp_c
-      }))
+      data: s.data
+        .filter(d =>
+          d.airtemp_c !== undefined &&
+          d.temp_c !== undefined &&
+          d.airtemp_c >= minAirTemp.value
+        )
+        .map(d => ({
+          ...d,
+          x: d.airtemp_c,
+          y: d.temp_c
+        }))
     }))
   )
 
@@ -86,7 +148,7 @@ const settings = {
     animation: false
   },
   lang: {
-    noData: 'Select a station to view data'
+    noData: 'No data to display'
   },
   plotOptions: {
     series: {
@@ -123,10 +185,10 @@ const settings = {
     gridLineWidth: 1
   },
   yAxis: {
-    min: 0,
     title: {
       text: 'Daily Mean<br>Water Temperature (degC)'
-    }
+    },
+    endOnTick: false
   },
   tooltip: {
     shared: false,
