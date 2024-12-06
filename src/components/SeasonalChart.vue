@@ -8,8 +8,8 @@
         variant="outlined"
         style="height:40px;"
       >
-        <v-btn :value="false">Mean & Range</v-btn>
-        <v-btn :value="true">Individual Years</v-btn>
+        <v-btn size="default" :value="false">Mean & Range</v-btn>
+        <v-btn size="default" :value="true">Individual Years</v-btn>
       </v-btn-toggle>
     </div>
     <v-divider class="mb-2"></v-divider>

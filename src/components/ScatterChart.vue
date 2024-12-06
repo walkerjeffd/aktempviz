@@ -16,15 +16,14 @@
         </div>
       </div>
       <v-spacer></v-spacer>
-      <div class="d-flex align-center text-caption">
+      <div class="d-flex align-center text-caption" style="min-width: 200px">
         <v-alert
           color="grey-darken-2"
           density="compact"
           class="text-caption"
           variant="tonal"
         >
-          <v-icon start>mdi-alert</v-icon>
-          Note: Air temp. data only available through {{ config.daymet.last_year }}.
+          Air temp. only available through {{ config.daymet.last_year }}
         </v-alert>
       </div>
     </div>
