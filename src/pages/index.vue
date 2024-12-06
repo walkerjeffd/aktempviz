@@ -1,45 +1,124 @@
 <template>
-  <v-app-bar color="primary" density="compact">
-    <v-app-bar-title>AKTEMP<span class="text-caption">VIZ</span> | Stream Temperature Data Visualization Tool</v-app-bar-title>
+  <v-app-bar color="#00583D">
+    <!-- Mobile Menu Button (only show on mobile) -->
+    <v-app-bar-nav-icon
+      v-if="!lgAndUp"
+      color="white"
+      @click="mobileMenu = true"
+    ></v-app-bar-nav-icon>
 
-    <v-btn
-      color="white"
-      variant="text"
-      @click="showWelcome = true"
-    >
-      <v-icon start>mdi-information-outline</v-icon>
-      Welcome
-    </v-btn>
-    <v-btn
-      color="white"
-      variant="text"
-      @click="startTour"
-    >
-      <v-icon start>mdi-cursor-default-click-outline</v-icon>
-      <span v-if="width > 1600">Start Tour</span>
-      <span v-else>Tour</span>
-    </v-btn>
-    <v-btn
-      color="white"
-      variant="text"
-      @click="showDatasets = true"
-    >
-      <v-icon start>mdi-database</v-icon>
-      Data Sources
-    </v-btn>
+    <v-toolbar-title>
+      <div class="d-flex align-center">
+        <div :class="lgAndUp ? 'mr-4' : 'mr-2'">
+          <a href="https://accs.uaa.alaska.edu/">
+            <v-img
+              src="/img/accs-logo.png"
+              alt="ACCS logo"
+              contain
+              :width="lgAndUp ? 200 : 150"
+              style="background-color:white"
+            ></v-img>
+          </a>
+        </div>
+        <div :class="{'text-h5': lgAndUp, 'text-h6': !lgAndUp, 'd-flex': true}">
+          <div>AKTEMP<span class="text-caption">VIZ</span></div>
+          <div v-if="lgAndUp" class="ml-2">| Stream Temperature Data Visualization Tool</div>
+        </div>
+      </div>
+    </v-toolbar-title>
 
-    <v-divider vertical class="ml-2 mr-4"></v-divider>
+    <!-- Desktop Navigation (hide on mobile) -->
+    <template v-if="lgAndUp">
+      <v-btn
+        color="white"
+        variant="text"
+        @click="showWelcome = true"
+      >
+        <v-icon start>mdi-information-outline</v-icon>
+        Welcome
+      </v-btn>
+      <v-btn
+        color="white"
+        variant="text"
+        @click="startTour"
+      >
+        <v-icon start>mdi-cursor-default-click-outline</v-icon>
+        <span v-if="width > 1600">Start Tour</span>
+        <span v-else>Tour</span>
+      </v-btn>
+      <v-btn
+        color="white"
+        variant="text"
+        @click="showDatasets = true"
+      >
+        <v-icon start>mdi-database</v-icon>
+        Data Sources
+      </v-btn>
 
-    <v-btn
-      color="white"
-      variant="outlined"
-      href="https://aktemp.uaa.alaska.edu"
-      target="_blank"
-      size="small"
+      <v-divider vertical class="ml-2 mr-4"></v-divider>
+
+      <v-btn
+        color="white"
+        variant="outlined"
+        href="https://aktemp.uaa.alaska.edu"
+        target="_blank"
+        size="small"
+      >
+        <v-icon start>mdi-arrow-left</v-icon>
+        Back to AKTEMP
+      </v-btn>
+    </template>
+
+    <!-- Mobile Navigation Dialog -->
+    <v-dialog
+      v-model="mobileMenu"
+      fullscreen
+      transition="dialog-bottom-transition"
     >
-      <v-icon start>mdi-arrow-left</v-icon>
-      Back to AKTEMP
-    </v-btn>
+      <v-card>
+        <v-toolbar color="#00583D">
+          <v-btn
+            icon="mdi-close"
+            color="white"
+            @click="mobileMenu = false"
+          ></v-btn>
+          <v-toolbar-title class="text-white">Menu</v-toolbar-title>
+        </v-toolbar>
+
+        <v-list>
+          <v-list-item
+            @click="showWelcome = true; mobileMenu = false"
+            prepend-icon="mdi-information-outline"
+          >
+            <v-list-item-title>Welcome</v-list-item-title>
+          </v-list-item>
+
+          <v-list-item
+            @click="startTour(); mobileMenu = false"
+            prepend-icon="mdi-cursor-default-click-outline"
+          >
+            <v-list-item-title>Start Tour</v-list-item-title>
+          </v-list-item>
+
+          <v-list-item
+            @click="showDatasets = true; mobileMenu = false"
+            prepend-icon="mdi-database"
+          >
+            <v-list-item-title>Data Sources</v-list-item-title>
+          </v-list-item>
+
+          <v-divider class="my-2"></v-divider>
+
+          <v-list-item
+            href="https://aktemp.uaa.alaska.edu"
+            target="_blank"
+            prepend-icon="mdi-arrow-left"
+          >
+            <v-list-item-title>Back to AKTEMP</v-list-item-title>
+          </v-list-item>
+        </v-list>
+      </v-card>
+    </v-dialog>
   </v-app-bar>
   <v-container fluid style="background-color: #f5f5f5;" class="fill-height align-start">
     <!-- Welcome Dialog -->
@@ -1189,5 +1268,8 @@ const timeAggregationLabel = computed(() => {
 function downloadData() {
   downloadCSV(selectedStations.value, config.value.last_updated)
 }
+
+// Add this with the other refs
+const mobileMenu = ref(false)
 
 </script>
