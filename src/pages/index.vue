@@ -22,7 +22,7 @@
         </div>
         <div :class="{'text-h5': lgAndUp, 'text-h6': !lgAndUp, 'd-flex': true}">
           <div>AKTEMP<span class="text-caption">VIZ</span></div>
-          <div v-if="lgAndUp" class="ml-2">| Stream Temperature Data Visualization Tool</div>
+          <div v-if="lgAndUp" class="ml-2">Stream Temperature Data Visualization Tool</div>
         </div>
       </div>
     </v-toolbar-title>
@@ -61,8 +61,8 @@
         color="white"
         variant="outlined"
         href="https://aktemp.uaa.alaska.edu"
-        target="_blank"
         size="small"
+        class="mr-4"
       >
         <v-icon start>mdi-arrow-left</v-icon>
         Back to AKTEMP
@@ -139,7 +139,7 @@
                 </v-list-item>
               </v-list>
               <div class="text-body-2">
-                <i>Data Sources:</i> Water temperature data from AKTEMP, U.S. Geological Survey, and National Park Service. Air temperature data from Daymet. <a href="#" @click.prevent="showWelcome = false; showDatasets = true">Click here</a> to learn more about the data.
+                <i>Data Sources:</i> Water temperature data from <a href="https://aktemp.uaa.alaska.edu">AKTEMP</a>, <a href="https://waterdata.usgs.gov/nwis" target="_blank">U.S. Geological Survey</a>, and <a href="https://irma.nps.gov/aqwebportal" target="_blank">National Park Service</a>. Air temperature data from <a href="https://daymet.ornl.gov" target="_blank">Daymet</a>. <a href="#" @click.prevent="showWelcome = false; showDatasets = true">Click here</a> to learn more about the data.
               </div>
             </v-col>
             <v-col cols="12" md="6">
@@ -179,17 +179,20 @@
         </v-toolbar>
         <v-card-text>
           <div class="text-h6">Water Temperature Data</div>
-          <p>A daily water temperature dataset from 1980 to present was compiled from the following data sources:</p>
+          <p>AKTEMPVIZ shows water temperature data obtained from the following data sources:</p>
           <ul class="ml-8 my-4">
-            <li><strong>AKTEMP:</strong> <a href="https://aktemp.uaa.alaska.edu" target="_blank">https://aktemp.uaa.alaska.edu</a></li>
-            <li><strong>U.S. Geological Survey National Water Information System (NWIS):</strong> <a href="https://waterdata.usgs.gov/nwis" target="_blank">https://waterdata.usgs.gov/nwis</a></li>
-            <li><strong>National Park Service (NPS) Aquarius Web Portal:</strong> <a href="https://irma.nps.gov/aqwebportal" target="_blank">https://irma.nps.gov/aqwebportal</a></li>
+            <li><strong><a href="https://aktemp.uaa.alaska.edu">AKTEMP Database</a></strong></li>
+            <li><strong><a href="https://waterdata.usgs.gov/nwis" target="_blank">U.S. Geological Survey (USGS) National Water Information System (NWIS)</a></strong></li>
+            <li><strong><a href="https://irma.nps.gov/aqwebportal" target="_blank">National Park Service (NPS) Aquarius Web Portal:</a></strong></li>
           </ul>
 
-          <p>This application only shows data from stations located on streams and rivers (lakes and reservoirs are excluded) with at least 180 days of data.</p>
+          <p>Data are only shown for stations located on streams and rivers (lakes and reservoirs are excluded).</p>
 
           <div class="text-h6 mt-4">Air Temperature Data</div>
-          <p>Air temperature data was obtained from <a href="https://daymet.ornl.gov" target="_blank">Daymet</a>, which provides a 1-km gridded dataset of daily weather data. Air temperature at each station was extracted from the Daymet tiles based on the station's latitude and longitude. Note that Daymet releases new data on an annual cycle, and therefore <b>air temperature data for the current year will not be available until sometime the following year</b>.</p>
+          <p>Air temperature data was obtained from <a href="https://daymet.ornl.gov" target="_blank">Daymet</a>, which provides a 1-km gridded dataset of daily weather data. For each station, the air temperature was extracted from the Daymet tiles based on that station's latitude and longitude. Because Daymet releases new data on an annual cycle, <b>air temperature data for the current year will not be available until sometime the following year</b>. Air temperature data are currently <strong>available through {{ config.daymet.last_year }}</strong>.</p>
+
+          <div class="text-h6 mt-4">Dataset Updates</div>
+          <p>The datasets from each source are automatically updated on a weekly cycle (each Sunday).</p>
         </v-card-text>
         <v-card-actions>
           <v-spacer></v-spacer>
@@ -330,154 +333,154 @@
 
             <v-divider></v-divider>
 
-            <div class="d-flex pr-4">
-              <v-text-field
-                v-model="filterSearch"
-                label="Search Stations"
-                prepend-inner-icon="mdi-magnify"
-                variant="underlined"
-                hide-details
-                single-line
-                clearable
-                class="px-4"
-                data-step="station-search"
-              ></v-text-field>
-
-              <div class="py-4">
-                <v-menu v-model="showFilters" :close-on-content-click="false" location="end" offset="15">
-                  <template v-slot:activator="{ props }">
-                    <v-btn
-                      :color="filtersEnabled ? 'warning' : 'default'"
-                      variant="outlined"
-                      size="small"
-                      v-bind="props"
-                      data-step="station-filter"
-                    >
-                      <v-icon start>mdi-filter-outline</v-icon>
-                      Filters
-                    </v-btn>
-                  </template>
-                  <v-sheet style="width:350px">
-                    <div class="pa-4 text-h6">Station Filters</div>
-
-                    <v-divider></v-divider>
-
-                    <div class="px-4 pt-4">
-                      <!-- <v-select
-                        v-model="selectedBasinLayer"
-                        :items="basinLayerOptions"
-                        item-title="label"
-                        item-value="value"
-                        label="Basins Layer"
-                        density="compact"
-                        variant="outlined"
-                        clearable
-                        hint="Select a layer, then click a basin on the map to filter for stations within that basin."
-                        persistent-hint
-                        class="mb-4"
-                      ></v-select> -->
-                      <v-text-field
-                        v-model="filterBefore"
-                        clearable
-                        label="Observations Before (YYYY-MM-DD)"
-                        placeholder="YYYY-MM-DD"
-                        variant="outlined"
-                        density="compact"
-                        persistent-hint
-                        hint="Filter stations with data before this date."
-                        class="mb-4"
-                      ></v-text-field>
-                      <v-text-field
-                        v-model="filterAfter"
-                        clearable
-                        label="Observations After (YYYY-MM-DD)"
-                        placeholder="YYYY-MM-DD"
-                        variant="outlined"
-                        density="compact"
-                        persistent-hint
-                        hint="Filter stations with data after this date."
-                        class="mb-4"
-                      ></v-text-field>
-                      <v-text-field
-                        v-model="filterCount"
-                        clearable
-                        label="Minimum # of Daily Observations"
-                        variant="outlined"
-                        density="compact"
-                        type="number"
-                        persistent-hint
-                        hint="Filter stations with at least this many daily values."
-                        class="mb-4"
-                      ></v-text-field>
-                      <v-checkbox
-                        v-model="filterSelected"
-                        label="Show Selected Only"
-                        hint="Show only stations that are currently selected will be shown in the table and map."
-                        persistent-hint
-                        density="compact"
-                        class="mb-4"
-                      ></v-checkbox>
-                    </div>
-
-                    <v-divider></v-divider>
-
-                    <div class="d-flex pa-4">
-                      <v-btn variant="outlined" aria-label="Clear all station filters" @click="resetFilters">
-                        <v-icon start>mdi-refresh</v-icon> Clear All
-                      </v-btn>
-                      <v-spacer></v-spacer>
-                      <v-btn variant="outlined" aria-label="Close station filters menu" @click="showFilters = false">
-                        <v-icon start>mdi-close</v-icon> Close
-                      </v-btn>
-                    </div>
-                  </v-sheet>
-                </v-menu>
-              </div>
-            </div>
-
-            <div class="d-flex flex-wrap pa-2 align-center">
-              <div class="text-overline text-primary font-weight-bold mx-2" v-if="activeFilters.length > 0">
-                Active Filters:
-              </div>
-              <v-chip
-                v-for="filter in activeFilters"
-                :key="filter.type"
-                class="ma-1"
-                closable
-                variant="outlined"
-                color="warning"
-                @click:close="removeFilter(filter.type)"
-              >
-                {{ filter.label }}&nbsp;<b>{{ filter.value }}</b>
-              </v-chip>
-            </div>
-
             <div data-step="stations-table">
-              <v-data-table
-                v-model="selectedStations"
-                :headers="headers"
-                :items="filteredStations"
-                items-per-page-text="# per Page"
-                :items-per-page-options="[5, 10, 25, 50, 100, -1]"
-                density="compact"
-                item-key="id"
-                items-per-page="5"
-                show-select
-                return-object
-                width="100%"
-              >
-                <template v-slot:header.data-table-select></template>
-                <template v-slot:item.start="{ item }">{{ item.start.substr(0, 4) }}</template>
-                <template v-slot:item.end="{ item }">{{ item.end.substr(0, 4) }}</template>
-                <template v-slot:item.n="{ item }">{{ item.n.toLocaleString() }}</template>
-                <template v-slot:item.data-table-select="{ internalItem, isSelected, toggleSelect }">
-                  <v-checkbox-btn
-                    :model-value="isSelected(internalItem)"
-                    :color="isSelected(internalItem) ? internalItem.value.color : 'grey'"
-                    @update:model-value="selectStation(internalItem.value)"
-                  ></v-checkbox-btn>
-                </template>
-              </v-data-table>
+              <div class="d-flex pr-4">
+                <v-text-field
+                  v-model="filterSearch"
+                  label="Search Stations"
+                  prepend-inner-icon="mdi-magnify"
+                  variant="underlined"
+                  hide-details
+                  single-line
+                  clearable
+                  class="px-4"
+                ></v-text-field>
+
+                <div class="py-4">
+                  <v-menu v-model="showFilters" :close-on-content-click="false" location="end" offset="15">
+                    <template v-slot:activator="{ props }">
+                      <v-btn
+                        :color="filtersEnabled ? 'warning' : 'default'"
+                        variant="outlined"
+                        size="small"
+                        v-bind="props"
+                      >
+                        <v-icon start>mdi-filter-outline</v-icon>
+                        Filters
+                      </v-btn>
+                    </template>
+                    <v-sheet style="width:350px">
+                      <div class="pa-4 text-h6">Station Filters</div>
+
+                      <v-divider></v-divider>
+
+                      <div class="px-4 pt-4">
+                        <!-- <v-select
+                          v-model="selectedBasinLayer"
+                          :items="basinLayerOptions"
+                          item-title="label"
+                          item-value="value"
+                          label="Basins Layer"
+                          density="compact"
+                          variant="outlined"
+                          clearable
+                          hint="Select a layer, then click a basin on the map to filter for stations within that basin."
+                          persistent-hint
+                          class="mb-4"
+                        ></v-select> -->
+                        <v-text-field
+                          v-model="filterBefore"
+                          clearable
+                          label="Observations Before (YYYY-MM-DD)"
+                          placeholder="YYYY-MM-DD"
+                          variant="outlined"
+                          density="compact"
+                          persistent-hint
+                          hint="Filter stations with data before this date."
+                          class="mb-4"
+                        ></v-text-field>
+                        <v-text-field
+                          v-model="filterAfter"
+                          clearable
+                          label="Observations After (YYYY-MM-DD)"
+                          placeholder="YYYY-MM-DD"
+                          variant="outlined"
+                          density="compact"
+                          persistent-hint
+                          hint="Filter stations with data after this date."
+                          class="mb-4"
+                        ></v-text-field>
+                        <v-text-field
+                          v-model="filterCount"
+                          clearable
+                          label="Minimum # of Daily Observations"
+                          variant="outlined"
+                          density="compact"
+                          type="number"
+                          persistent-hint
+                          hint="Filter stations with at least this many daily values."
+                          class="mb-4"
+                        ></v-text-field>
+                        <v-checkbox
+                          v-model="filterSelected"
+                          label="Show Selected Only"
+                          hint="Show only stations that are currently selected will be shown in the table and map."
+                          persistent-hint
+                          density="compact"
+                          class="mb-4"
+                        ></v-checkbox>
+                      </div>
+
+                      <v-divider></v-divider>
+
+                      <div class="d-flex pa-4">
+                        <v-btn variant="outlined" aria-label="Clear all station filters" @click="resetFilters">
+                          <v-icon start>mdi-refresh</v-icon> Clear All
+                        </v-btn>
+                        <v-spacer></v-spacer>
+                        <v-btn variant="outlined" aria-label="Close station filters menu" @click="showFilters = false">
+                          <v-icon start>mdi-close</v-icon> Close
+                        </v-btn>
+                      </div>
+                    </v-sheet>
+                  </v-menu>
+                </div>
+              </div>
+
+              <div class="d-flex flex-wrap pa-2 align-center">
+                <div class="text-overline text-primary font-weight-bold mx-2" v-if="activeFilters.length > 0">
+                  Active Filters:
+                </div>
+                <v-chip
+                  v-for="filter in activeFilters"
+                  :key="filter.type"
+                  class="ma-1"
+                  closable
+                  variant="outlined"
+                  color="warning"
+                  @click:close="removeFilter(filter.type)"
+                >
+                  {{ filter.label }}&nbsp;<b>{{ filter.value }}</b>
+                </v-chip>
+              </div>
+
+              <div>
+                <v-data-table
+                  v-model="selectedStations"
+                  :headers="headers"
+                  :items="filteredStations"
+                  items-per-page-text="# per Page"
+                  :items-per-page-options="[5, 10, 25, 50, 100, -1]"
+                  density="compact"
+                  item-key="id"
+                  items-per-page="5"
+                  show-select
+                  return-object
+                  width="100%"
+                >
+                  <template v-slot:header.data-table-select></template>
+                  <template v-slot:item.start="{ item }">{{ item.start.substr(0, 4) }}</template>
+                  <template v-slot:item.end="{ item }">{{ item.end.substr(0, 4) }}</template>
+                  <template v-slot:item.n="{ item }">{{ item.n.toLocaleString() }}</template>
+                  <template v-slot:item.data-table-select="{ internalItem, isSelected, toggleSelect }">
+                    <v-checkbox-btn
+                      :model-value="isSelected(internalItem)"
+                      :color="isSelected(internalItem) ? internalItem.value.color : 'grey'"
+                      @update:model-value="selectStation(internalItem.value)"
+                    ></v-checkbox-btn>
+                  </template>
+                </v-data-table>
+              </div>
             </div>
           </div>
         </v-card>
@@ -505,14 +508,24 @@
                     </v-card-title>
                     <v-divider></v-divider>
                     <v-card-text>
-                      <p>This chart displays daily mean water temperatures over time for the selected stations.</p>
+                      <p>This chart displays timeseries of daily, monthly, and seasonal mean water temperatures for the selected stations.</p>
                       <ul class="ml-8 mt-4">
-                        <li>Each line represents a different station.</li>
-                        <li>Hover over points to see detailed information.</li>
-                        <li>Use the bottom slider or click and drag on the main chart area to zoom in on specific time periods.</li>
-                        <li>Use the Zoom preset buttons in the top left corner to zoom to specific time ranges, or return to the full range (All).</li>
-                        <li>Click on a station in the legend to hide it.</li>
+                        <li><strong>Use the bottom slider</strong> or <strong>click and drag</strong> on the main chart area to zoom in on specific time periods.</li>
+                        <li><strong>Use the Zoom preset buttons</strong> in the top left corner to focus on specific time ranges, or return to the full range (All).</li>
+                        <li><strong>Click the All button</strong> in the top left corner to reset the chart to the full time period.</li>
+                        <li><strong>Click on a station in the legend</strong> to show or hide it.</li>
+                        <li><strong>Click the Average By buttons</strong> to change the aggregation level. When <strong>Season</strong> is selected, <strong>change the start and end months</strong> to define the season. For example, selecting June and August will show the mean temperature during the June-August summer season of each year.</li>
+                        <li><strong>Click the <v-icon size="small" left>mdi-menu</v-icon> menu</strong> in the top-right corner to open the chart in full screen or download it as an image or PDF.</li>
                       </ul>
+                      <v-alert
+                        color="grey-darken-2"
+                        density="compact"
+                        class="mt-4"
+                        variant="tonal"
+                        icon="mdi-alert"
+                      >
+                        Monthly and seasonal averages are only shown when at least 75% of daily values are available, otherwise they are considered incomplete and are not shown.
+                      </v-alert>
                     </v-card-text>
                     <v-divider></v-divider>
                     <v-card-actions>
@@ -613,6 +626,7 @@
                     size="small"
                     @click="downloadData"
                     :disabled="selectedStations.length === 0"
+                    data-step="download"
                   >
                     Download Data
                   </v-btn>
@@ -640,13 +654,13 @@
                     <v-card-title class="text-h5 px-6 mt-1">Seasonality Chart</v-card-title>
                     <v-divider></v-divider>
                     <v-card-text>
-                      <p class="mb-4">This chart displays seasonal changes in water temperature.</p>
-                      <p class="mb-4">
-                        By default, the chart shows the <b>mean and range of water temperatures on each day of the year</b> and at each station (one line per station).
-                      </p>
-                      <p>
-                        Click the <b>"Show Individual Years"</b> switch to see the water temperature for each individual year (one line per year, multiple years per station).
-                      </p>
+                      <p class="mb-4">This chart displays seasonal changes in water temperature at each selected station.</p>
+                      <ul class="ml-8 mt-4">
+                        <li>By default, the chart shows the <strong>mean and range of water temperatures on each day of the year</strong> and at each station (one line per station).</li>
+                        <li><strong>Switch Display As to Individual Years</strong> to see the water temperature for each individual year and station (one line per year, multiple years per station).</li>
+                        <li><strong>Click and drag</strong> on the chart to zoom in.</li>
+                        <li><strong>Click the <v-icon size="small" left>mdi-menu</v-icon> menu</strong> in the top-right corner to open the chart in full screen or download it as an image or PDF.</li>
+                      </ul>
                     </v-card-text>
                     <v-divider></v-divider>
                     <v-card-actions>
@@ -679,10 +693,19 @@
                     <v-card-text>
                       <p>This chart shows the relationship between daily mean air and water temperatures.</p>
                       <ul class="ml-8 my-4">
-                        <li>Hover over points to see detailed information.</li>
-                        <li>Click and drag to zoom in.</li>
+                        <li><strong>Change the Min. Air Temp</strong> value to exclude very cold days when water/air temperature dynamics are often static (i.e., all water temperatures are approx. zero). This setting helps focus the chart on the air-water temperature dynamics during the warmer months.</li>
+                        <li><strong>Click and drag</strong> on the chart to zoom in.</li>
+                        <li><strong>Click the <v-icon size="small" left>mdi-menu</v-icon> menu</strong> in the top-right corner to open the chart in full screen or download it as an image or PDF.</li>
                       </ul>
-                      <p>Air temperature data is obtained from <a href="https://daymet.ornl.gov/" target="_blank">Daymet</a>, which is currently available through calendar year {{ config.daymet.last_year }}. Any more recent water temperature data will not be shown in this chart until the next year of Daymet data becomes available (sometime in the following year).</p>
+                      <v-alert
+                        color="grey-darken-2"
+                        density="compact"
+                        class="mt-4"
+                        variant="tonal"
+                        icon="mdi-alert"
+                      >
+                        Air temperature data is obtained from <a href="https://daymet.ornl.gov/" target="_blank">Daymet</a>, which is currently available through calendar year {{ config.daymet.last_year }}. Any more recent water temperature data will not be shown in this chart until the next year of Daymet data becomes available (sometime in following year).
+                      </v-alert>
                     </v-card-text>
                     <v-divider></v-divider>
                     <v-card-actions>
@@ -1123,17 +1146,24 @@ async function fetchData(station) {
 const driverTour = driver({
   showProgress: true,
   stagePadding: 10,
+  allowClose: true,
   steps: [
     {
       element: '[data-step="stations-map"]',
       popover: {
         title: 'Stations Map',
-        description: 'This is the stations map. Hover the layers icon to switch basemaps. Click on a station to select it or press Next and we\'ll select the first station for you.',
+        description: `Hover the layers icon on the left to change basemaps. Select a basin layer to see low, medium, or high resolution watershed boundaries, which can then be used to filter stations by basin. Click on a station to select it (you can select up to ${maxSelected} stations at a time).<br><br>Select a station now or press Next and we\'ll select the first station for you.`,
         onNextClick: (el, step, opts) => {
           if (selectedStations.value.length === 0) {
-            selectStation(stations.value[0])
+            let station = stations.value.find(s => s.provider_station_code === 'USGS:15302812')
+            if (!station) {
+              station = stations[Math.floor(Math.random() * stations.length)]
+            }
+            selectStation(station)
           }
-          driverTour.moveNext()
+          setTimeout(() => {
+            driverTour.moveNext()
+          }, 1000)
         }
       }
     },
@@ -1141,49 +1171,35 @@ const driverTour = driver({
       element: '[data-step="selected-stations"]',
       popover: {
         title: 'Selected Stations',
-        description: `Selected stations will show up here. Click the open link icon to visit the website for that station from its original data source. Click the X icon to deselect a station.<br><br>Note you can select up to ${maxSelected} stations at a time.`
+        description: `Your selected stations are shown here. Click the X icon to deselect a station or "Unselect All" to clear all selections.<br><br>You can select up to ${maxSelected} stations at a time.`
       }
     },
     {
       element: '[data-step="stations-table"]',
       popover: {
         title: 'Stations Table',
-        description: 'You can also select or unselect stations using the checkbox on each row of the statios table. Sort the table by clicking on the column headers.'
-      }
-    },
-    {
-      element: '[data-step="station-search"]',
-      popover: {
-        title: 'Station Search',
-        description: 'Search for specific stations by typing the organization code or station ID. Only stations matching your search will show up in the table below as well as on the map above.'
-      }
-    },
-    {
-      element: '[data-step="station-filter"]',
-      popover: {
-        title: 'Station Filters',
-        description: 'Click the Filters button to see more options for filtering the stations by basin, time period, and observation count.'
+        description: 'Search for stations by provider, name, and waterbody using the search box. Click the Filters button to see more options for filtering the stations by start/end date and observation count. Sort the table by clicking on the column headers.<br><br>You can also select or unselect stations using the checkbox the left of each row. '
       }
     },
     {
       element: '[data-step="timeseries"]',
       popover: {
         title: 'Timeseries Chart',
-        description: 'This chart shows a timeseries of the daily mean water temperature at each selected station. Zoom in and out by clicking and dragging over the chart area, or using the time range selector at the bottom of the chart. Click the \'All\' button to zoom out to the full time range.'
+        description: 'This chart shows a timeseries of the daily, monthly, or seasonal mean water temperature at each selected station. Zoom in and out by clicking and dragging over the chart area, or using the time range selector at the bottom of the chart. Click the \'All\' button to zoom out to the full time range.'
       }
     },
     {
       element: '[data-step="seasonal"]',
       popover: {
         title: 'Seasonality Chart',
-        description: 'This chart shows the changes in water temperature over each year for the selected stations. Hover over the lines to see detailed information.'
+        description: 'This chart shows the mean and range of seasonal changes in water temperature for the selected stations. Click "Individual Years" to see the temperatures for each year individually.'
       }
     },
     {
       element: '[data-step="scatter"]',
       popover: {
         title: 'Air vs Water Temp Chart',
-        description: 'This chart shows the relationship between daily mean air and water temperatures. Click and drag to zoom in.<br><br>Differences in the shape of this relationship indicate different dynamics and thermal regimes at different stations.',
+        description: `This chart shows the relationship between daily mean air and water temperatures. Differences in the shape of this relationship indicate different dynamics and thermal regimes at different stations.<br><br>Note that air temperature data is only currently available through ${config.value.daymet.last_year}, more recent water temperature data will not appear on this chart.`,
         onNextClick: (el, step, opts) => {
           clearSelection()
           driverTour.moveNext()
@@ -1191,9 +1207,16 @@ const driverTour = driver({
       }
     },
     {
+      element: '[data-step="download"]',
+      popover: {
+        title: 'Download Data',
+        description: 'Click the Download button in the lower-right to download the daily data at each station as a CSV file.'
+      }
+    },
+    {
       popover: {
         title: 'Tour Complete!',
-        description: 'Thanks for taking the tour! All stations have been unselected so you can start fresh.<br><br>Happy exploring!'
+        description: 'Thanks for taking the tour! All stations have been unselected so you can start from a clean slate.<br><br>Happy exploring!'
       }
     }
   ]
