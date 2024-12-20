@@ -7,7 +7,7 @@
     "preview": "vite preview",
     "lint": "eslint . --fix --ignore-path .gitignore",
     "deploy:stage": "vite build && aws s3 sync dist/ s3://walkerenvres-apps-dev/aktempviz/ --delete",
-    "deploy": "vite build && aws s3 sync dist/ s3://aktemp.uaa.alaska.edu/viz/ --delete"
+    "deploy": "vite build && aws s3 sync dist/ s3://aktemp.uaa.alaska.edu/viz/ --exclude 'data/*' --delete"
   },
   "dependencies": {
     "@mdi/font": "7.4.47",

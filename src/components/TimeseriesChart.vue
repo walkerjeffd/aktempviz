@@ -5,12 +5,14 @@
 <script setup>
 import { onMounted, watch, ref, computed } from 'vue'
 import { DateTime } from 'luxon'
+import { monthOptions } from '@/lib/constants'
 
 const props = defineProps({
   series: Array,
   loading: Boolean,
   aggregation: String,
-  aggregationLabel: String
+  aggregationLabel: String,
+  season: Array
 })
 const emit = defineEmits(['zoom'])
 const chartEl = ref(null)
@@ -101,6 +103,23 @@ function update () {
 function tooltipFormatter(date, points) {
   if (!points || points.length === 0) return ''
 
+  let header
+  if (props.aggregation === 'day') {
+    header = DateTime.fromISO(date, { zone: 'US/Alaska' }).toFormat('MMMM d, yyyy')
+  } else if (props.aggregation === 'month') {
+    header = DateTime.fromISO(date, { zone: 'US/Alaska' }).toFormat('MMMM yyyy')
+  } else if (props.aggregation === 'season') {
+    const startMonthLabel = monthOptions.find(m => m.value === props.season[0])?.label.substring(0,3)
+    const endMonthLabel = monthOptions.find(m => m.value === props.season[1])?.label.substring(0,3)
+    let seasonLabel = `${startMonthLabel}-${endMonthLabel}`
+    if (startMonthLabel === endMonthLabel) {
+      seasonLabel = startMonthLabel
+    }
+    header = `${seasonLabel} ${DateTime.fromISO(date, { zone: 'US/Alaska' }).toFormat('yyyy')}`
+  } else {
+    header = DateTime.fromISO(date, { zone: 'US/Alaska' }).toFormat('MMMM d, yyyy')
+  }
+
   const rows = points.map(d => `
     <tr>
       <td style="color: ${d.point.color}; padding-right: 10px; font-size: 18px;">&#9679;</td>
@@ -110,7 +129,7 @@ function tooltipFormatter(date, points) {
   `).join('');
   return `
     <div style="">
-      <div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; color: #333;">${DateTime.fromISO(date, { zone: 'US/Alaska' }).toFormat('MMMM d, yyyy')}</div>
+      <div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; color: #333;">${header}</div>
       <table style="border-collapse: separate; border-spacing: 0 6px; font-size: 14px;">
         <thead>
           <tr>
@@ -182,6 +201,7 @@ const settings = {
   tooltip: {
     shared: false,
     useHTML: true,
+    headerFormat: '<div style="font-size: 16px; font-weight: bold; margin-bottom: 10px; color: #333;">{point.date}asdfs</div>',
     formatter: function () {
       return tooltipFormatter(this.point.date, this.points)
     }

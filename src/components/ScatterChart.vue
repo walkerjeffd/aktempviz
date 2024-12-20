@@ -23,7 +23,7 @@
           class="text-caption"
           variant="tonal"
         >
-          Air temp. only available through {{ config.daymet.last_year }}
+          Air temp. only available through {{ config.daymet_last_year }}
         </v-alert>
       </div>
     </div>

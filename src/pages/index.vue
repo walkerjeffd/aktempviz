@@ -189,7 +189,7 @@
           <p>Data are only shown for stations located on streams and rivers (lakes and reservoirs are excluded).</p>
 
           <div class="text-h6 mt-4">Air Temperature Data</div>
-          <p>Air temperature data was obtained from <a href="https://daymet.ornl.gov" target="_blank">Daymet</a>, which provides a 1-km gridded dataset of daily weather data. For each station, the air temperature was extracted from the Daymet tiles based on that station's latitude and longitude. Because Daymet releases new data on an annual cycle, <b>air temperature data for the current year will not be available until sometime the following year</b>. Air temperature data are currently <strong>available through {{ config.daymet.last_year }}</strong>.</p>
+          <p>Air temperature data was obtained from <a href="https://daymet.ornl.gov" target="_blank">Daymet</a>, which provides a 1-km gridded dataset of daily weather data. For each station, the air temperature was extracted from the Daymet tiles based on that station's latitude and longitude. Because Daymet releases new data on an annual cycle, <b>air temperature data for the current year will not be available until sometime the following year</b>. Air temperature data are currently <strong>available through {{ config.daymet_last_year }}</strong>.</p>
 
           <div class="text-h6 mt-4">Dataset Updates</div>
           <p>The datasets from each source are automatically updated on a weekly cycle (each Sunday).</p>
@@ -611,6 +611,7 @@
                   :loading="loadingData"
                   :aggregation="selectedAggregation"
                   :aggregation-label="timeAggregationLabel"
+                  :season="[startMonth, endMonth]"
                   @zoom="onTimeseriesZoom"
                 />
               </div>
@@ -704,7 +705,7 @@
                         variant="tonal"
                         icon="mdi-alert"
                       >
-                        Air temperature data is obtained from <a href="https://daymet.ornl.gov/" target="_blank">Daymet</a>, which is currently available through calendar year {{ config.daymet.last_year }}. Any more recent water temperature data will not be shown in this chart until the next year of Daymet data becomes available (sometime in following year).
+                        Air temperature data is obtained from <a href="https://daymet.ornl.gov/" target="_blank">Daymet</a>, which is currently available through calendar year {{ config.daymet_last_year }}. Any more recent water temperature data will not be shown in this chart until the next year of Daymet data becomes available (sometime in following year).
                       </v-alert>
                     </v-card-text>
                     <v-divider></v-divider>
@@ -737,7 +738,7 @@ import TimeseriesChart from '@/components/TimeseriesChart'
 import SeasonalChart from '@/components/SeasonalChart'
 import ScatterChart from '@/components/ScatterChart'
 import { downloadCSV } from '@/lib/download'
-
+import { monthOptions } from '@/lib/constants'
 const { width, lgAndUp } = useDisplay()
 
 // REFS
@@ -765,7 +766,7 @@ const filterBefore = ref('')
 const filterCount = ref(null)
 
 const config = ref({
-  daymet: { last_year: 2023 },
+  daymet_last_year: 2023,
   last_updated: (new Date()).toISOString()
 })
 
@@ -1126,7 +1127,7 @@ async function fetchData(station) {
   await nextTick()
 
   try {
-    const response = await fetch(`data/stations/${station.filename}`)
+    const response = await fetch(`data/data/${station.filename}`)
     if (!response.ok) {
       alert(`Error loading data for station ${station.provider_station_code}`)
       return []
@@ -1199,7 +1200,7 @@ const driverTour = driver({
       element: '[data-step="scatter"]',
       popover: {
         title: 'Air vs Water Temp Chart',
-        description: `This chart shows the relationship between daily mean air and water temperatures. Differences in the shape of this relationship indicate different dynamics and thermal regimes at different stations.<br><br>Note that air temperature data is only currently available through ${config.value.daymet.last_year}, more recent water temperature data will not appear on this chart.`,
+        description: `This chart shows the relationship between daily mean air and water temperatures. Differences in the shape of this relationship indicate different dynamics and thermal regimes at different stations.<br><br>Note that air temperature data is only currently available through ${config.value.daymet_last_year}, more recent water temperature data will not appear on this chart.`,
         onNextClick: (el, step, opts) => {
           clearSelection()
           driverTour.moveNext()
@@ -1257,23 +1258,6 @@ const selectedMonths = computed(() => {
   return months
 })
 
-// Add the months array for the dropdown
-const monthOptions = [
-  { label: 'January', value: 1 },
-  { label: 'February', value: 2 },
-  { label: 'March', value: 3 },
-  { label: 'April', value: 4 },
-  { label: 'May', value: 5 },
-  { label: 'June', value: 6 },
-  { label: 'July', value: 7 },
-  { label: 'August', value: 8 },
-  { label: 'September', value: 9 },
-  { label: 'October', value: 10 },
-  { label: 'November', value: 11 },
-  { label: 'December', value: 12 }
-]
-
-// Add this computed property
 const timeAggregationLabel = computed(() => {
   switch (selectedAggregation.value) {
     case 'month':
