@@ -1,6 +1,4 @@
-# AKTEMP dataset
-
-# TODO: add waterbody_name and url to stations
+# AKTEMPVIZ dataset
 
 library(tidyverse)
 library(janitor)
@@ -102,8 +100,8 @@ series_flags <- collect(db_series_flags) |>
   rowwise() |> 
   mutate(
     flag_data = list({
-      start_date <- as_date(with_tz(start_datetime, "US/Alaska"))
-      end_date <- as_date(with_tz(end_datetime, "US/Alaska"))
+      start_date <- as_date(with_tz(start_datetime, "America/Anchorage"))
+      end_date <- as_date(with_tz(end_datetime, "America/Anchorage"))
       tibble(
         date = seq.Date(start_date, end_date, by = "day"),
         flag = flag_type_id

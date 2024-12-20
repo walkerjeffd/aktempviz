@@ -60,7 +60,7 @@ nwis_temp_data <- nwis_temp_data_raw |>
     data = list({
       data |> 
         dataRetrieval::renameNWISColumns() |> 
-        mutate(dateTime = with_tz(dateTime, tzone = "US/Alaska")) |> 
+        mutate(dateTime = with_tz(dateTime, tzone = "America/Anchorage")) |> 
         select(
           datetime = dateTime,
           temp_c = Wtemp_Inst,
