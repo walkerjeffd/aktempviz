@@ -10,12 +10,13 @@ tryCatch({
   library(targets)
   
   log_info("Running pipeline...")
-  tar_invalidate(c("daymet_tile_files", "airtemp"))
+  tar_invalidate(c(
+    "usgs_stations", "usgs_raw_data",
+    "nps_datasets", "nps_raw_data",
+    "aktemp_raw_data",
+    "config"
+  ))
   tar_make()
-  
-  log_info("daymet tile files, n={nrow(tar_read(daymet_tile_files))}")
-  log_info("airtemp, n={nrow(tar_read(airtemp))}")
-  print(head(tar_read(airtemp)))
 
   log_success("Pipeline completed successfully")
 }, error = function(e) {
