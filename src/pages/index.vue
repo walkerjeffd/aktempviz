@@ -1006,13 +1006,14 @@ const dailyFilteredSeries = computed(() => {
 const aggregatedSeries = computed(() => {
   return dailySeries.value.map(series => {
     const { data, station } = series
+    const nonNullData = data.filter(d => d.temp_c !== null && d.temp_c !== undefined)
     let aggregatedData
     switch (selectedAggregation.value) {
       case 'month':
-        aggregatedData = aggregateByMonth(station.provider_station_code, data)
+        aggregatedData = aggregateByMonth(station.provider_station_code, nonNullData)
         break
       case 'season':
-        aggregatedData = aggregateBySeason(station.provider_station_code, data, selectedMonths.value)
+        aggregatedData = aggregateBySeason(station.provider_station_code, nonNullData, selectedMonths.value)
         break
       default:
         aggregatedData = data
@@ -1049,8 +1050,23 @@ function aggregateBySeason(station_id, data, months) {
   const totalDays = selectedMonths.value.length * daysPerMonth
   const MIN_DAYS = Math.round(totalDays * 0.75)
 
-  const seasonData = data.filter(d => months.includes(+d.date.slice(5, 7)))
-  const grouped = groups(seasonData, d => d.date.slice(0, 4))
+  // For each data point, determine which season year it belongs to
+  const seasonData = data.map(d => {
+    const month = +d.date.slice(5, 7)
+    const year = +d.date.slice(0, 4)
+    // If start month is after end month (e.g. Nov-Feb), and this is one of the later months (e.g. Nov/Dec)
+    // then this belongs to the winter season that ends in the next year
+    const seasonYear = startMonth.value > endMonth.value && month >= startMonth.value
+      ? year + 1  // e.g. Nov 2020 belongs to Winter 2020-2021
+      : year      // e.g. Jan 2021 belongs to Winter 2020-2021
+
+    return {
+      ...d,
+      seasonYear
+    }
+  }).filter(d => months.includes(+d.date.slice(5, 7)))
+
+  const grouped = groups(seasonData, d => d.seasonYear)
 
   return grouped.map(([year, temps]) => ({
     station_id,
@@ -1200,18 +1216,11 @@ const driverTour = driver({
       element: '[data-step="scatter"]',
       popover: {
         title: 'Air vs Water Temp Chart',
-        description: `This chart shows the relationship between daily mean air and water temperatures. Differences in the shape of this relationship indicate different dynamics and thermal regimes at different stations.<br><br>Note that air temperature data is only currently available through ${config.value.daymet_last_year}, more recent water temperature data will not appear on this chart.`,
+        description: `This chart shows the relationship between daily mean air and water temperatures. Differences in the shape of this relationship indicate different dynamics and thermal regimes at different stations.<br><br>Note that air temperature data is only currently available through ${config.value.daymet_last_year}, more recent water temperature data will not appear on this chart until the next year of Daymet data becomes available (sometime in following year).`,
         onNextClick: (el, step, opts) => {
           clearSelection()
           driverTour.moveNext()
         }
-      }
-    },
-    {
-      element: '[data-step="download"]',
-      popover: {
-        title: 'Download Data',
-        description: 'Click the Download button in the lower-right to download the daily data at each station as a CSV file.'
       }
     },
     {

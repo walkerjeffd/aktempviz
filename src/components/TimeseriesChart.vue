@@ -30,7 +30,6 @@ watch(() => [props.aggregation, props.aggregationLabel], () => {
         }, false)
       }
     })
-    console.log(`${props.aggregationLabel}<br>Water Temperature (°C)`)
     chartEl.value.chart.redraw()
     chartEl.value.chart.yAxis[0].setTitle({
       text: `${props.aggregationLabel}<br>Water Temperature (°C)`
