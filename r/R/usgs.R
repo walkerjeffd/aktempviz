@@ -1,5 +1,8 @@
-
-download_usgs_station_data <- function (station_id, startDate = "1980-01-01", endDate = as.character(today())) {
+download_usgs_station_data <- function(
+  station_id,
+  startDate = "1980-01-01",
+  endDate = as.character(today())
+) {
   Sys.sleep(2)
   dataRetrieval::readNWISuv(
     siteNumbers = station_id,
@@ -10,14 +13,14 @@ download_usgs_station_data <- function (station_id, startDate = "1980-01-01", en
     as_tibble()
 }
 
-collect_usgs_stations <- function () {
+collect_usgs_stations <- function() {
   raw <- dataRetrieval::whatNWISsites(
     stateCd = "ak",
     parameterCd = "00010",
     hasDataTypeCd = "iv"
   ) |>
     as_tibble()
-  
+
   raw |>
     filter(site_tp_cd %in% c("ST")) |>
     transmute(
@@ -30,11 +33,13 @@ collect_usgs_stations <- function () {
       longitude = dec_long_va,
       provider_code = "USGS",
       provider_name = "U.S. Geological Survey",
-      url = glue("https://waterdata.usgs.gov/nwis/inventory/?site_no={station_id}&agency_cd=USGS")
+      url = glue(
+        "https://waterdata.usgs.gov/nwis/inventory/?site_no={station_id}&agency_cd=USGS"
+      )
     )
 }
 
-collect_usgs_raw_data <- function (usgs_stations) {
+collect_usgs_raw_data <- function(usgs_stations) {
   usgs_stations |>
     select(station_id) |>
     mutate(
@@ -42,7 +47,7 @@ collect_usgs_raw_data <- function (usgs_stations) {
     )
 }
 
-transform_usgs_data <- function (usgs_stations, usgs_raw_data) {
+transform_usgs_data <- function(usgs_stations, usgs_raw_data) {
   daily_data <- usgs_raw_data |>
     rowwise() |>
     mutate(
@@ -55,7 +60,7 @@ transform_usgs_data <- function (usgs_stations, usgs_raw_data) {
             temp_c = Wtemp_Inst,
             code = Wtemp_Inst_cd
           ) |>
-          filter(!is.na(temp_c)) |> 
+          filter(!is.na(temp_c)) |>
           group_by(date = as_date(datetime)) |>
           summarise(
             min_temp_c = min(temp_c),

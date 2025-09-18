@@ -1,5 +1,4 @@
-
-db_connect <- function () {
+db_connect <- function() {
   if (Sys.getenv("AKTEMP_DBNAME") == "") {
     stop("Environment variable AKTEMP_DBNAME is not set")
   }
@@ -13,57 +12,80 @@ db_connect <- function () {
   )
 }
 
-collect_aktemp_raw_data <- function () {
+collect_aktemp_raw_data <- function() {
   con <- db_connect()
 
-  db_providers <- tbl(con, "providers") |> 
+  db_providers <- tbl(con, "providers") |>
     select(provider_id = id, provider_code = code, provider_name = name)
-  
-  db_stations <- tbl(con, "stations") |> 
+
+  db_stations <- tbl(con, "stations") |>
     left_join(
       db_providers,
       by = c("provider_id")
-    ) |> 
+    ) |>
     filter(
       !private,
       waterbody_type == "STREAM"
-    ) |> 
-    semi_join(tbl(con, "series"), by = c("id" = "station_id")) |> 
+    ) |>
+    semi_join(tbl(con, "series"), by = c("id" = "station_id")) |>
     select(
-      station_id = id, provider_code, provider_name,
-      station_code = code, station_description = description,
-      longitude, latitude, placement,
-      waterbody_name, waterbody_type, mixed
+      station_id = id,
+      provider_code,
+      provider_name,
+      station_code = code,
+      station_description = description,
+      longitude,
+      latitude,
+      placement,
+      waterbody_name,
+      waterbody_type,
+      mixed
     )
-  
-  db_series <- tbl(con, "series") |> 
-    semi_join(db_stations, by = c("station_id")) |> 
-    filter(interval == "CONTINUOUS") |> 
+
+  db_series <- tbl(con, "series") |>
+    semi_join(db_stations, by = c("station_id")) |>
+    filter(interval == "CONTINUOUS") |>
     select(
-      series_id = id, station_id,
-      depth_m, depth_category,
-      start_datetime, end_datetime, n_values,
-      interval, frequency, reviewed, accuracy
+      series_id = id,
+      station_id,
+      depth_m,
+      depth_category,
+      start_datetime,
+      end_datetime,
+      n_values,
+      interval,
+      frequency,
+      reviewed,
+      accuracy
     )
-  
+
   db_series_flags <- tbl(con, "series_flags") |>
     semi_join(db_series, by = c("series_id")) |>
     select(
-      flag_id = id, series_id, start_datetime, end_datetime,
-      flag_type_id, flag_type_other
+      flag_id = id,
+      series_id,
+      start_datetime,
+      end_datetime,
+      flag_type_id,
+      flag_type_other
     )
-  
+
   db_series_daily <- tbl(con, "series_daily") |>
     semi_join(db_series, by = c("series_id")) |>
     select(
-      series_id, date, n_values, min_temp_c, mean_temp_c, max_temp_c
+      series_id,
+      date,
+      n_values,
+      min_temp_c,
+      mean_temp_c,
+      max_temp_c
     )
-  
+
   # collect
   stations <- collect(db_stations)
   series <- collect(db_series)
-  series_flags <- collect(db_series_flags) |> 
-    rowwise() |> 
+  series_flags <- collect(db_series_flags) |>
+    rowwise() |>
     mutate(
       flag_data = list({
         start_date <- as_date(with_tz(start_datetime, "America/Anchorage"))
@@ -73,15 +95,15 @@ collect_aktemp_raw_data <- function () {
           flag = flag_type_id
         )
       })
-    ) |> 
-    select(series_id, flag_id, flag_data) |> 
-    nest_by(series_id, .key = "flags") |> 
+    ) |>
+    select(series_id, flag_id, flag_data) |>
+    nest_by(series_id, .key = "flags") |>
     mutate(
       flags = list({
-        bind_rows(flags) |> 
-          select(flag_data) |> 
-          unnest(flag_data) |> 
-          group_by(date) |> 
+        bind_rows(flags) |>
+          select(flag_data) |>
+          unnest(flag_data) |>
+          group_by(date) |>
           summarise(
             flag = str_c(sort(unique(flag)), collapse = ","),
             .groups = "drop"
@@ -89,9 +111,9 @@ collect_aktemp_raw_data <- function () {
       })
     )
   series_daily <- collect(db_series_daily)
-  
+
   DBI::dbDisconnect(con)
-  
+
   list(
     stations = stations,
     series = series,
@@ -100,7 +122,7 @@ collect_aktemp_raw_data <- function () {
   )
 }
 
-transform_aktemp_data <- function (db_data) {
+transform_aktemp_data <- function(db_data) {
   series <- db_data[["series"]] |>
     left_join(
       db_data[["daily"]] |>
@@ -125,63 +147,66 @@ transform_aktemp_data <- function (db_data) {
       n_daily_values = nrow(data)
     ) |>
     select(-flags)
-  
-  series_n <- series |> 
-    nest_by(station_id, .key = "series") |> 
+
+  series_n <- series |>
+    nest_by(station_id, .key = "series") |>
     mutate(
       n_dates = {
-        series |> 
-          select(data) |> 
-          unnest(data) |> 
-          pull(date) |> 
+        series |>
+          select(data) |>
+          unnest(data) |>
+          pull(date) |>
           n_distinct()
       },
       n_dates_overlapping = {
-        series |> 
-          select(data) |> 
-          unnest(data) |> 
-          count(date) |> 
+        series |>
+          select(data) |>
+          unnest(data) |>
+          count(date) |>
           filter(n > 1) |>
           nrow()
       },
       n_series = nrow(series)
-    ) |> 
+    ) |>
     ungroup()
-  
-  series <- series_n |> 
+
+  series <- series_n |>
     filter(n_dates_overlapping <= 10)
-  
-  daily_series <- series |> 
-    select(station_id, series) |> 
-    unnest(series) |> 
-    select(station_id, data) |> 
-    unnest(data) |> 
-    filter(is.na(flag)) |> 
-    group_by(station_id, date) |> 
+
+  daily_series <- series |>
+    select(station_id, series) |>
+    unnest(series) |>
+    select(station_id, data) |>
+    unnest(data) |>
+    filter(is.na(flag)) |>
+    group_by(station_id, date) |>
     summarise(
       min_temp_c = min(min_temp_c, na.rm = TRUE),
       mean_temp_c = mean(mean_temp_c, na.rm = TRUE),
       max_temp_c = max(max_temp_c, na.rm = TRUE),
       .groups = "drop"
-    ) |> 
-    nest_by(station_id) |> 
+    ) |>
+    nest_by(station_id) |>
     ungroup()
-  
-  db_data$stations |> 
+
+  db_data$stations |>
     mutate(
-      url = glue("https://aktemp.uaa.alaska.edu/#/explorer/stations/{station_id}"),
-    ) |> 
+      url = glue(
+        "https://aktemp.uaa.alaska.edu/#/explorer/stations/{station_id}"
+      ),
+    ) |>
     inner_join(
       daily_series,
       by = c("station_id")
-    ) |> 
+    ) |>
     transmute(
       provider_station_code = glue("{provider_code}:{station_code}"),
       station_id = as.character(station_id),
       station_code,
       station_description,
       waterbody_name,
-      latitude, longitude,
+      latitude,
+      longitude,
       provider_code,
       provider_name,
       url,
