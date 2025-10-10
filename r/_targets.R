@@ -14,6 +14,10 @@ tar_option_set(
   )
 )
 
+if (interactive()) {
+  sapply(tar_option_get("packages"), require, character.only = TRUE)
+}
+
 mkdirp <- function(x) {
   dir.create(x, recursive = TRUE, showWarnings = FALSE)
   x
@@ -38,11 +42,39 @@ list(
     format = "file"
   ),
   tar_target(wbd, load_wbd(wbd_file)),
-
+  
+  tar_target(usgs_freeze_start_date, "1980-01-01"),
+  tar_target(usgs_freeze_end_date, "2023-12-31"),
+  tar_target(usgs_new_start_date, as.character(lubridate::ymd(usgs_freeze_end_date) + 1)),
   tar_target(usgs_stations, collect_usgs_stations()),
-  tar_target(usgs_raw_data, collect_usgs_raw_data(usgs_stations)),
-  tar_target(usgs_data, transform_usgs_data(usgs_stations, usgs_raw_data)),
+  tar_target(usgs_raw_data_freeze, {
+    usgs_stations <- collect_usgs_stations()
+    collect_usgs_raw_data(
+      usgs_stations,
+      start_date = usgs_freeze_start_date,
+      end_date = usgs_freeze_end_date
+    )
+  }),
+  tar_target(usgs_raw_data_new, collect_usgs_raw_data(usgs_stations, start_date = usgs_new_start_date)),
+  tar_target(usgs_data_freeze, transform_usgs_data(usgs_raw_data_freeze)),
+  tar_target(usgs_data_new, transform_usgs_data(usgs_raw_data_new)),
+  tar_target(usgs_data, {
+    data <- bind_rows(
+      usgs_data_freeze,
+      usgs_data_new
+    ) |> 
+      nest_by(station_id) |> 
+      mutate(data = map(data, bind_rows))
+    usgs_stations |>
+      inner_join(
+        data,
+        by = c("station_id")
+      )
+  }),
 
+  tar_target(nps_freeze_start_date, "2008-01-01"),
+  tar_target(nps_freeze_end_date, usgs_freeze_end_date),
+  tar_target(nps_new_start_date, as.character(lubridate::ymd(nps_freeze_end_date) + 1)),
   tar_target(
     nps_metrics,
     c(

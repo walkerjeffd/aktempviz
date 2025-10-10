@@ -13,7 +13,7 @@ tryCatch(
     log_info("Running pipeline...")
     tar_invalidate(c(
       "usgs_stations",
-      "usgs_raw_data",
+      "usgs_raw_data_new",
       "nps_datasets",
       "nps_raw_data",
       "aktemp_raw_data",

@@ -1,14 +1,14 @@
 download_usgs_station_data <- function(
   station_id,
-  startDate = "1980-01-01",
-  endDate = as.character(today())
+  start_date = "1980-01-01",
+  end_date = as.character(today())
 ) {
   Sys.sleep(2)
   dataRetrieval::readNWISuv(
     siteNumbers = station_id,
     parameterCd = "00010",
-    startDate = startDate,
-    endDate = endDate
+    startDate = start_date,
+    endDate = end_date
   ) |>
     as_tibble()
 }
@@ -39,21 +39,24 @@ collect_usgs_stations <- function() {
     )
 }
 
-collect_usgs_raw_data <- function(usgs_stations) {
+collect_usgs_raw_data <- function(usgs_stations, start_date = "1980-01-01", end_date = as.character(today())) {
   usgs_stations |>
     select(station_id) |>
     mutate(
-      data = map(station_id, download_usgs_station_data)
+      data = map(station_id, ~ download_usgs_station_data(.x, start_date = start_date, end_date = end_date))
     )
 }
 
-transform_usgs_data <- function(usgs_stations, usgs_raw_data) {
-  daily_data <- usgs_raw_data |>
-    rowwise() |>
+transform_usgs_data <- function(usgs_raw_data) {
+  usgs_raw_data |>
     mutate(
-      data = list({
+      data = map(data, function (data) {
+        if (nrow(data) == 0) {
+          return(tibble())
+        }
         data |>
           dataRetrieval::renameNWISColumns() |>
+          rename_at(vars(starts_with("Primary_")), ~ str_remove_all(., "Primary_")) |> 
           mutate(dateTime = with_tz(dateTime, tzone = "America/Anchorage")) |>
           select(
             datetime = dateTime,
@@ -68,11 +71,5 @@ transform_usgs_data <- function(usgs_stations, usgs_raw_data) {
             max_temp_c = max(temp_c)
           )
       })
-    )
-
-  usgs_stations |>
-    inner_join(
-      daily_data,
-      by = c("station_id")
     )
 }

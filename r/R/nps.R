@@ -7,11 +7,11 @@ extract_dataset_metric <- function(x) {
   y[1]
 }
 
-collect_nps_datasets <- function(metrics) {
+collect_nps_datasets <- function(metrics, start_date = "2008-01-01", end_date = as.character(today())) {
   response <- request("https://irma.nps.gov/AQWebPortal/Data/Data_List") |>
     req_method("POST") |>
     req_body_raw(
-      "sort=Sequence-desc&page=1&pageSize=10000&group=&filter=&dataFilters=Location-Latitude~gt~50&spatialFilterRings=&spatialFilterWkid=&interval=Latest&date=2024-06-05&endDate=&parameters%5B0%5D=119&value=Location_4&type=Location&subValue=&subValueType=&refPeriod=&calendar=1&legend=-12&legendFilter%5B0%5D=-1&utcOffset=240&folder="
+      glue("sort=Sequence-desc&page=1&pageSize=10000&group=&filter=&dataFilters=Location-Latitude~gt~50&spatialFilterRings=&spatialFilterWkid=&interval=Latest&date={start_date}&endDate={end_date}&parameters%5B0%5D=119&value=Location_4&type=Location&subValue=&subValueType=&refPeriod=&calendar=1&legend=-12&legendFilter%5B0%5D=-1&utcOffset=240&folder=")
     ) |>
     req_headers("Content-Type" = "application/x-www-form-urlencoded") |>
     # req_dry_run() |>

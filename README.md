@@ -300,11 +300,11 @@ name: aktemp/aktempviz-data
 Deploy image to ECR
 
 ```sh
-aws ecr get-login-password --region {region} | docker login --username AWS --password-stdin {account}.dkr.ecr.{region}.amazonaws.com
+aws ecr get-login-password --region us-west-2 | docker login --username AWS --password-stdin 083481224424.dkr.ecr.us-west-2.amazonaws.com
 
-docker tag aktemp/aktempviz-data:latest {account}.dkr.ecr.{region}.amazonaws.com/aktemp/aktempviz-data:latest
+docker tag aktemp/aktempviz-data:latest 083481224424.dkr.ecr.us-west-2.amazonaws.com/aktemp/aktempviz-data:latest
 
-docker push {account}.dkr.ecr.{region}.amazonaws.com/aktemp/aktempviz-data:latest
+docker push 083481224424.dkr.ecr.us-west-2.amazonaws.com/aktemp/aktempviz-data:latest
 ```
 
 #### Batch Job

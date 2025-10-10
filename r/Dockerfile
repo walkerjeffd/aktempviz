@@ -1,4 +1,4 @@
-FROM rocker/geospatial:4.4.2
+FROM rocker/geospatial:4.5.1
 
 RUN apt-get update && apt-get install -y \
     libpq-dev \
