@@ -1,4 +1,5 @@
 library(targets)
+library(paws.storage)
 
 tar_source(list.files("R", pattern = "\\.R$", full.names = TRUE))
 
@@ -11,6 +12,14 @@ tar_option_set(
     "httr2",
     "jsonlite",
     "logger"
+  ),
+  repository = "aws",
+  repository_meta = "aws",
+  resources = tar_resources(
+    aws = tar_resources_aws(
+      bucket = Sys.getenv("AWS_S3_BUCKET"),
+      prefix = Sys.getenv("AWS_S3_PREFIX")
+    )
   )
 )
 
@@ -33,7 +42,7 @@ list(
     cue = tar_cue("always")
   ),
   tar_target(gis_dir, mkdirp(file.path(data_dir, "gis"))),
-  tar_target(daymet_dir, mkdirp(file.path(data_dir, "daymet"))),
+  tar_target(era5_dir, mkdirp(file.path(data_dir, "era5"))),
   tar_target(output_dir, mkdirp(file.path(data_dir, "output"))),
 
   tar_target(
@@ -102,28 +111,21 @@ list(
       .id = "dataset"
     )
   ),
+  # ERA5-Land air temperature data
+  tar_target(gee_init, init_gee()),
+  tar_target(era5_last_date, find_era5_last_date(gee_init)),
   tar_target(
-    combined_station_tile_years,
-    extract_station_tile_years(combined_data)
+    era5_fetch_plan,
+    determine_era5_fetch_plan(combined_data, era5_dir, era5_last_date)
   ),
   tar_target(
-    daymet_last_year,
-    find_daymet_last_year()
+    era5_cache,
+    collect_era5_data(era5_fetch_plan, era5_dir, gee_init)
   ),
   tar_target(
-    daymet_tile_years,
-    extract_daymet_tile_years(combined_station_tile_years, daymet_last_year)
+    combined_data_airtemp,
+    merge_era5_to_stations(combined_data, era5_cache)
   ),
-  tar_target(
-    daymet_tile_files,
-    collect_daymet_tile_files(daymet_tile_years, daymet_dir)
-  ),
-  tar_target(
-    airtemp,
-    extract_airtemp(combined_station_tile_years, daymet_tile_files)
-  ),
-
-  tar_target(combined_data_airtemp, merge_data_airtemp(combined_data, airtemp)),
   tar_target(station_wbd, extract_station_wbd(combined_data, wbd)),
   tar_target(
     output_data,
@@ -142,7 +144,7 @@ list(
   tar_target(
     config,
     list(
-      daymet_last_year = daymet_last_year,
+      era5_last_date = as.character(era5_last_date),
       last_updated = format_ISO8601(
         with_tz(Sys.time(), tzone = "America/Anchorage"),
         usetz = TRUE

@@ -5,3 +5,10 @@
 
 data/
 config.yml
+
+# Google Earth Engine service account credentials
+gee-service-account.json
+
+# Environment files
+.env.local.sh
+.env.docker.local
