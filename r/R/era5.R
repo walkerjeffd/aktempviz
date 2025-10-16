@@ -1,325 +1,303 @@
 # ERA5-Land Air Temperature Data Functions
 # Retrieves daily mean 2m air temperature from Google Earth Engine
-# Dataset: ECMWF/ERA5_LAND/DAILY_AGGR
+# Dataset: ECMWF/ERA5_LAND/HOURLY
 
-# Initialize Google Earth Engine ----
-init_gee <- function(email, key_file) {
-  ee <- import("ee")
+init_gee <- function(email = "", key_file = "") {
+  gee <- reticulate::import("ee")
 
   # Authenticate with service account
-  credentials <- ee$ServiceAccountCredentials(
-    email = email,
-    key_file = key_file
+  credentials <- gee$ServiceAccountCredentials(
+    email = Sys.getenv("GEE_SERVICE_ACCOUNT_EMAIL", unset = email),
+    key_file = Sys.getenv("GEE_SERVICE_ACCOUNT_KEY_FILE", unset = key_file)
   )
 
   # Initialize with service account email
-  ee$Initialize(credentials = credentials)
+  gee$Initialize(credentials = credentials)
 
-  ee
+  gee
 }
 
-# Find last available date in ERA5-Land dataset ----
-find_era5_last_date <- function(ee) {
+find_era5_last_date <- function(gee_config) {
   log_info("Finding last available date in ERA5-Land dataset...")
 
-  tryCatch({
-    era5 <- ee$ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR")
-
-    # Get the most recent image
-    latest <- era5$sort("system:time_start", FALSE)$first()
-
-    # Convert from milliseconds to date
-    last_date <- lubridate::ymd(latest$get("system:index")$getInfo())
-
-    log_info("ERA5-Land last available date: {last_date}")
-    last_date
-  }, error = function(e) {
-    log_error("Failed to query ERA5-Land last date: {conditionMessage(e)}")
-    # Return a conservative fallback (5 days ago)
-    fallback_date <- Sys.Date() - 5
-    log_warn("Using fallback date: {fallback_date}")
-    fallback_date
-  })
-}
-
-# S3 Cache Management ----
-
-get_s3_cache_uri <- function() {
-  bucket <- Sys.getenv("AWS_S3_BUCKET")
-  prefix <- Sys.getenv("AWS_S3_PREFIX")
-
-  if (bucket == "" || prefix == "") {
-    log_error("AWS_S3_BUCKET and AWS_S3_PREFIX environment variables must be set")
-    stop("Missing AWS S3 configuration")
-  }
-
-  glue("s3://{bucket}/{prefix}/cache/era5_cache.csv")
-}
-
-read_era5_cache <- function(era5_dir) {
-  s3_uri <- get_s3_cache_uri()
-  local_cache_file <- file.path(era5_dir, "era5_cache.csv")
-
-  log_info("Reading ERA5 cache from S3: {s3_uri}")
-
-  tryCatch({
-    # Download from S3 using AWS CLI
-    result <- system2(
-      "aws",
-      args = c("s3", "cp", s3_uri, local_cache_file),
-      stdout = FALSE,
-      stderr = FALSE
-    )
-
-    if (result == 0 && file.exists(local_cache_file)) {
-      cache <- read_csv(
-        local_cache_file,
-        col_types = cols(
-          station_id = col_character(),
-          latitude = col_double(),
-          longitude = col_double(),
-          date = col_date(),
-          mean_airtemp_c = col_double()
-        )
-      )
-      log_info("Loaded {nrow(cache)} rows from ERA5 cache")
-      return(cache)
-    } else {
-      log_warn("ERA5 cache not found in S3, starting with empty cache")
-      return(tibble(
-        station_id = character(),
-        latitude = double(),
-        longitude = double(),
-        date = as.Date(character()),
-        mean_airtemp_c = double()
-      ))
-    }
-  }, error = function(e) {
-    log_warn("Failed to read ERA5 cache from S3: {conditionMessage(e)}")
-    log_info("Starting with empty cache")
-    return(tibble(
-      station_id = character(),
-      latitude = double(),
-      longitude = double(),
-      date = as.Date(character()),
-      mean_airtemp_c = double()
-    ))
-  })
-}
-
-write_era5_cache <- function(cache, era5_dir) {
-  s3_uri <- get_s3_cache_uri()
-  local_cache_file <- file.path(era5_dir, "era5_cache.csv")
-
-  log_info("Writing ERA5 cache ({nrow(cache)} rows) to S3: {s3_uri}")
-
-  tryCatch({
-    # Write to local file
-    write_csv(cache, local_cache_file)
-
-    # Upload to S3 using AWS CLI
-    result <- system2(
-      "aws",
-      args = c("s3", "cp", local_cache_file, s3_uri),
-      stdout = FALSE,
-      stderr = FALSE
-    )
-
-    if (result == 0) {
-      log_success("ERA5 cache uploaded to S3 successfully")
-    } else {
-      log_error("Failed to upload ERA5 cache to S3")
-    }
-
-    cache
-  }, error = function(e) {
-    log_error("Failed to write ERA5 cache: {conditionMessage(e)}")
-    cache
-  })
-}
-
-# Determine what data needs to be fetched ----
-determine_era5_fetch_plan <- function(combined_data, era5_dir, era5_last_date) {
-  log_info("Determining ERA5 fetch plan...")
-
-  # Read existing cache
-  cache <- read_era5_cache(era5_dir)
-
-  # Extract station date ranges
-  station_ranges <- combined_data |>
-    select(dataset, station_id, latitude, longitude, data) |>
-    mutate(
-      provider_station_code = glue("{dataset}:{station_id}"),
-      start_date = map_chr(data, ~ as.character(min(.x$date))),
-      end_date = map_chr(data, ~ as.character(min(max(.x$date), era5_last_date)))
-    ) |>
-    select(provider_station_code, station_id, latitude, longitude, start_date, end_date) |>
-    mutate(
-      start_date = as.Date(start_date),
-      end_date = as.Date(end_date)
-    )
-
-  # For each station, determine missing dates
-  fetch_plan <- station_ranges |>
-    rowwise() |>
-    mutate(
-      cached_dates = list({
-        if (nrow(cache) == 0) {
-          as.Date(character())
-        } else {
-          cache |>
-            filter(station_id == .env$station_id) |>
-            pull(date)
-        }
-      }),
-      needed_dates = list({
-        all_dates <- seq.Date(start_date, end_date, by = "day")
-        setdiff(all_dates, cached_dates)
-      }),
-      n_needed = length(needed_dates),
-      fetch_start_date = if (n_needed > 0) min(needed_dates) else as.Date(NA),
-      fetch_end_date = if (n_needed > 0) max(needed_dates) else as.Date(NA)
-    ) |>
-    ungroup() |>
-    select(provider_station_code, station_id, latitude, longitude, fetch_start_date, fetch_end_date, n_needed) |>
-    filter(!is.na(fetch_start_date))
-
-  log_info("Fetch plan: {nrow(fetch_plan)} stations need data, {sum(fetch_plan$n_needed)} total dates")
-
-  fetch_plan
-}
-
-# Fetch ERA5 data for a single station ----
-fetch_era5_station <- function(station_id, latitude, longitude, start_date, end_date, ee) {
-  log_debug("Fetching ERA5 for station {station_id}: {start_date} to {end_date}")
-
-  # Create point geometry
-  point <- ee$Geometry$Point(c(longitude, latitude), proj = "EPSG:4326")
-
-  # Filter ERA5 collection to date range
-  era5 <- ee$ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR")$
-    filterDate(as.character(start_date), as.character(as.Date(end_date) + 1))$
-    select("temperature_2m_mean")
-
-  point_sf <- sf::st_point(c(longitude, latitude)) |>
-    sf::st_sfc(crs = 4326)
-
-  # Extract time series at point
-  values <- ee_extract(
-    x = era5$first(),
-    y = point_sf,
-    fun = ee$Reducer$mean()
-    # scale = 9000  # 9km resolution
+  gee <- init_gee(
+    email = gee_config$email,
+    key_file = gee_config$key_file
   )
 
-  # Process results
-  if (nrow(values) == 0) {
-    log_warn("No ERA5 data returned for station {station_id}")
-    return(tibble(
-      station_id = character(),
-      latitude = double(),
-      longitude = double(),
-      date = as.Date(character()),
-      mean_airtemp_c = double()
-    ))
-  }
+  tryCatch(
+    {
+      era5 <- gee$ImageCollection("ECMWF/ERA5_LAND/DAILY_AGGR")
 
-  result <- values |>
-    as_tibble() |>
-    transmute(
-      station_id = station_id,
-      latitude = latitude,
-      longitude = longitude,
-      date = as.Date(id, format = "%Y%m%d"),
-      mean_airtemp_c = temperature_2m_mean - 273.15  # Convert Kelvin to Celsius
-    ) |>
-    filter(!is.na(mean_airtemp_c))
+      # Get the most recent image
+      latest <- era5$sort("system:time_start", FALSE)$first()
 
-  log_debug("Fetched {nrow(result)} days for station {station_id}")
+      # Convert from milliseconds to date
+      last_date <- lubridate::ymd(latest$get("system:index")$getInfo())
 
-  # Rate limiting
-  Sys.sleep(0.5)
-
-  result
-}
-
-# Collect ERA5 data for all stations in fetch plan ----
-collect_era5_data <- function(fetch_plan, era5_dir, gee_init) {
-  log_info("Collecting ERA5 data for {nrow(fetch_plan)} stations...")
-
-  # Read existing cache
-  cache <- read_era5_cache(era5_dir)
-
-  if (nrow(fetch_plan) == 0) {
-    log_info("No new data to fetch")
-    return(cache)
-  }
-
-  # Wrapper for error handling
-  possibly_fetch <- possibly(fetch_era5_station, otherwise = NULL)
-
-  # Fetch data for each station
-  for (i in seq_len(nrow(fetch_plan))) {
-    station <- fetch_plan[i, ]
-
-    log_info("Fetching station {i}/{nrow(fetch_plan)}: {station$provider_station_code} ({station$n_needed} days)")
-
-    new_data <- possibly_fetch(
-      station_id = station$station_id,
-      latitude = station$latitude,
-      longitude = station$longitude,
-      start_date = station$fetch_start_date,
-      end_date = station$fetch_end_date
-    )
-
-    if (!is.null(new_data) && nrow(new_data) > 0) {
-      # Append to cache
-      cache <- bind_rows(cache, new_data) |>
-        distinct(station_id, date, .keep_all = TRUE) |>
-        arrange(station_id, date)
-
-      # Upload to S3 incrementally (every 10 stations or last station)
-      if (i %% 10 == 0 || i == nrow(fetch_plan)) {
-        write_era5_cache(cache, era5_dir)
-      }
-    } else {
-      log_warn("Failed to fetch data for station {station$provider_station_code}")
+      log_info("ERA5-Land last available date: {last_date}")
+      last_date
+    },
+    error = function(e) {
+      log_error("Failed to query ERA5-Land last date: {conditionMessage(e)}")
+      # Return a conservative fallback (5 days ago)
+      fallback_date <- Sys.Date() - 5
+      log_warn("Using fallback date: {fallback_date}")
+      fallback_date
     }
-  }
-
-  # Final upload
-  write_era5_cache(cache, era5_dir)
-
-  log_success("ERA5 data collection complete: {nrow(cache)} total rows in cache")
-
-  cache
+  )
 }
 
-# Merge ERA5 air temperature to station data ----
-merge_era5_to_stations <- function(combined_data, era5_cache) {
-  log_info("Merging ERA5 air temperature to station data...")
+fetch_era5_last_date <- function(gee) {
+  era5_hourly <- gee$ImageCollection("ECMWF/ERA5/HOURLY")$
+    filterDate(as.character(today() - days(90)), as.character(today()))$
+    select('temperature_2m')
 
-  combined_data |>
-    rowwise() |>
+  last_timestamp_str <- era5_hourly$sort('system:time_start', FALSE)$first()$get('system:index')$getInfo()
+  last_timestamp_utc <- ymd_h(last_timestamp_str, tz = "UTC")
+  last_timestamp_ak <- last_timestamp_utc - hours(9)
+  as.Date(last_timestamp_ak) - 1
+}
+
+fetch_era5_stations_period <- function(
+  stations,
+  start_date,
+  end_date,
+  last_full_date,
+  gee,
+  bucket = NULL
+) {
+  if (is.null(bucket)) {
+    bucket <- Sys.getenv("GCS_BUCKET")
+  }
+  stations_ee <- rgee::sf_as_ee(stations, quiet = TRUE)
+
+  era5_hourly <- gee$ImageCollection("ECMWF/ERA5/HOURLY")$
+    filterDate(start_date, as.character(as.Date(end_date) + 2))$
+    select('temperature_2m')
+
+  if (as.Date(end_date) > last_full_date) {
+    log_warn("Requested end_date {end_date} is after last full available date {last_full_date}, adjusting end_date")
+    end_date <- as.character(last_full_date)
+  }
+
+  if (as.Date(start_date) > as.Date(end_date)) {
+    log_warn("start_date {start_date} is after adjusted end_date {end_date}, no data to fetch")
+    return(NULL)
+  }
+
+  aggregate_hourly_images <- function(date_str) {
+    # Alaska day starts at 09:00 UTC of the same calendar date
+    # and ends at 09:00 UTC of the next calendar date
+    day_start <- gee$Date(date_str)$advance(9, 'hour')
+    day_end <- day_start$advance(24, 'hour')
+    
+    # Filter hourly images for this Alaska day
+    day_images <- era5_hourly$filterDate(day_start, day_end)
+    
+    # Calculate daily mean
+    daily_mean <- day_images$mean()$
+      set('system:time_start', gee$Date(date_str)$millis())$  # Label with local date
+      set('date', date_str)
+    
+    return(daily_mean)
+  }
+  date_strs <- as.character(seq(as.Date(start_date), as.Date(end_date), by = "day"))
+  era5_daily <- gee$ImageCollection(
+    gee$List(date_strs)$map(rgee::ee_utils_pyfunc(aggregate_hourly_images))
+  )
+
+  # fill gaps using nearest valid pixels
+  fill_with_nearest <- function(image, radius_m = 50000) {
+    # Original image (with mask intact)
+    original <- image$subtract(273.15)
+    
+    # Create filled version using focal_mean within radius
+    # This will average nearby valid pixels to fill masked areas
+    filled <- original$focal_mean(
+      radius = radius_m,
+      kernelType = 'circle',
+      units = 'meters'
+    )
+    
+    # Blend: use original where valid, use filled where originally masked
+    # unmask() replaces masked pixels with the filled values
+    result <- original$unmask(filled)
+    
+    return(result)
+  }
+  era5_filled <- era5_daily$map(function(image) {
+    return(fill_with_nearest(image, radius_m = 50000)$set('system:time_start', image$get('system:time_start')))
+  })
+
+  # extract values at stations
+  era5_extracted <- era5_filled$map(function(image) {
+    extracted <- image$reduceRegions(
+      collection = stations_ee,
+      reducer = gee$Reducer$first(),
+      scale = 9000
+    )$map(function(feature) {
+      feature$set('date', gee$Date(image$get('system:time_start'))$format('YYYY-MM-dd'))
+    })
+    return(extracted)
+  })$flatten()
+
+  # run task, save output to GCS
+  log_info("ERA5 fetch: submitting task to GEE")
+  task <- rgee::ee_table_to_gcs(
+    era5_extracted,
+    description = "fetch_era5",
+    bucket = bucket,
+    fileNamePrefix = "tasks/fetch_era5",
+    selectors = c("dataset", "provider_station_code", "date", "first")
+  )
+  task$start()
+  rgee::ee_monitoring(task)
+  Sys.sleep(5)
+
+  # download from GCS
+  bucket <- task$config$fileExportOptions$cloudStorageDestination$bucket
+  prefix <- paste0(task$config$fileExportOptions$cloudStorageDestination$filenamePrefix, ".csv")
+  local_file <- tempfile(fileext = ".csv")
+  log_info("ERA5 fetch: downloading table from GCS (gs://{bucket}/{prefix}) to local file ({local_file})")
+  download_from_gcs(
+    bucket = bucket,
+    prefix = prefix,
+    local_file = local_file
+  )
+
+  # parse results
+  log_info("ERA5 fetch: parsingresults from local file")
+  read_csv(local_file, col_types = cols(.default = col_character(), date = col_date(), first = col_double())) |> 
+    rename(mean_airtemp_c = first)
+}
+
+download_from_gcs <- function(bucket, prefix, local_file, max_retries = 10, initial_wait = 5, max_wait = 300) {
+  attempt <- 1
+  
+  while (attempt <= max_retries) {
+    tryCatch(
+      {
+        googleCloudStorageR::gcs_get_object(
+          object_name = prefix,
+          bucket = bucket,
+          saveToDisk = local_file,
+          overwrite = TRUE
+        )
+        return(invisible(NULL))  # Success - exit function
+      },
+      error = function(e) {
+        if (grepl("404", conditionMessage(e), ignore.case = TRUE)) {
+          if (attempt < max_retries) {
+            wait_seconds <- min(initial_wait * (2 ^ (attempt - 1)), max_wait)
+            log_warn("Object not found (attempt {attempt}/{max_retries}), retrying in {wait_seconds}s...")
+            Sys.sleep(wait_seconds)
+            attempt <<- attempt + 1
+          } else {
+            log_error("Object not found after {max_retries} attempts")
+            stop(e)
+          }
+        } else {
+          # Non-404 error - don't retry
+          stop(e)
+        }
+      }
+    )
+  }
+}
+
+fetch_era5_data <- function(wtemp_manifest) {
+  log_info("era5: initializing GEE")
+  gee <- init_gee()
+
+  bucket <- Sys.getenv("GCS_BUCKET")
+  prefix <- "cache/era5.rds"
+  cache_filename <- tempfile(fileext = ".rds")
+
+  googleCloudStorageR::gcs_get_object(
+    object_name = prefix,
+    bucket = bucket,
+    saveToDisk = cache_filename,
+    overwrite = TRUE
+  )
+
+  log_info("era5: loading cache from {cache_filename}")
+  if (file.exists(cache_filename)) {
+    cache <- read_rds(cache_filename)
+    log_info("era5: loaded {nrow(cache$data)} rows from existing cache")
+  } else {
+    log_info("era5: no existing cache found, starting fresh")
+    cache <- list(data = NULL)
+  }
+
+  last_full_date <- fetch_era5_last_date(gee)
+
+  if (is.null(cache[["data"]])) {
+    fetch_manifest <- wtemp_manifest
+    log_info("era5: fetching all {nrow(fetch_manifest)} station-years")
+  } else {
+    cache_drop <- cache[["data"]] |> 
+      anti_join(wtemp_manifest, by = names(wtemp_manifest))
+
+    cache_existing <- cache[["data"]] |> 
+      semi_join(wtemp_manifest, by = names(wtemp_manifest))
+
+    fetch_manifest <- wtemp_manifest |> 
+      anti_join(cache[["data"]], by = names(wtemp_manifest))
+
+    log_info("era5: updating dataset (drop={nrow(cache_drop)}, keep={nrow(cache_existing)}, fetch={nrow(fetch_manifest)})")
+  }
+  
+  fetch_data <- fetch_manifest |> 
+    nest_by(year, .key = "data") |>
+    ungroup() |> 
     mutate(
-      data = list({
-        # Get air temp data for this station
-        airtemp <- era5_cache |>
-          filter(station_id == .env$station_id) |>
-          select(date, mean_airtemp_c)
+      data = pmap(list(data, year), function(stations, year) {
+        log_info("era5: fetching year={year}, n_stations={nrow(stations)}")
+        x <- tryCatch({
+          stations |> 
+            st_as_sf(coords = c("longitude", "latitude"), crs = 4326) |> 
+            select(dataset, provider_station_code) |> 
+            fetch_era5_stations_period(
+              start_date = as.character(min(stations$start_date)),
+              end_date = as.character(max(stations$end_date)),
+              last_full_date = last_full_date,
+              gee = gee
+            ) |> 
+            nest_by(dataset, provider_station_code) |> 
+            ungroup()
+        }, error = function(e) {
+          log_error("era5: {e$message}")
+          NULL
+        })
+        if (is.null(x)) {
+          log_warn("era5: failed for year={year}")
+          return(NULL)
+        }
+        stations |> 
+          left_join(x, by = c("dataset", "provider_station_code"))
+      }, .progress = TRUE)
+    ) |> 
+    unnest(data)
 
-        # Join air temp to water temp data
-        # Complete date range to fill gaps
-        data |>
-          complete(date = seq.Date(min(date), max(date), by = "day")) |>
-          left_join(airtemp, by = "date") |>
-          mutate(
-            min_airtemp_c = NA_real_,
-            max_airtemp_c = NA_real_
-          )
-      })
-    ) |>
-    ungroup()
+  out_data <- bind_rows(cache_existing, fetch_data) |> 
+    arrange(dataset, provider_station_code, year)
+  log_info("era5: total {nrow(out_data)} station-years after update")
 
-  log_success("ERA5 air temperature merged successfully")
+  out <- list(
+    updated_at = format_ISO8601(now(), usetz = TRUE),
+    last_date = last_full_date,
+    data = out_data
+  )
+  write_rds(out, cache_filename, compress = "gz")
+
+  log_info("era5: saving updated cache {cache_filename} to gs://{bucket}/{prefix}")
+  googleCloudStorageR::gcs_upload(
+    file = cache_filename,
+    bucket = bucket,
+    name = prefix,
+    predefinedAcl = "bucketLevel"
+  )
+
+  out
 }

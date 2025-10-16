@@ -13,8 +13,8 @@ load_wbd <- function(gdb_file) {
   )
 }
 
-extract_station_wbd <- function(combined_data, wbd) {
-  stn_sf <- combined_data |>
+extract_station_wbd <- function(paired_data, wbd) {
+  stn_sf <- paired_data |>
     select(dataset, station_id, latitude, longitude) |>
     st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
 

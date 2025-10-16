@@ -1,14 +1,17 @@
+# RStudio project files
 .Rproj.user
 .Rhistory
 .RData
 .Ruserdata
 
+# python virtual environment
+.venv
+
+# input/output data files
 data/
-config.yml
 
 # Google Earth Engine service account credentials
-gee-service-account.json
+service-account.json
 
 # Environment files
-.env.local.sh
-.env.docker.local
+.env*

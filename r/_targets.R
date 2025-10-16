@@ -1,7 +1,13 @@
 library(targets)
-library(paws.storage)
 
 tar_source(list.files("R", pattern = "\\.R$", full.names = TRUE))
+
+if (file.exists(".env")) {
+  dotenv::load_dot_env(".env")
+}
+
+# sets GCS_AUTH_FILE to tempfile using GCS_AUTH_JSON=$(cat service-account.json | base64)
+init_gcs_auth()
 
 tar_option_set(
   packages = c(
@@ -13,12 +19,14 @@ tar_option_set(
     "jsonlite",
     "logger"
   ),
-  repository = "aws",
-  repository_meta = "aws",
+  repository = "gcp",
+  repository_meta = "gcp",
   resources = tar_resources(
-    aws = tar_resources_aws(
-      bucket = Sys.getenv("AWS_S3_BUCKET"),
-      prefix = Sys.getenv("AWS_S3_PREFIX")
+    gcp = tar_resources_gcp(
+      bucket = Sys.getenv("GCS_BUCKET"),
+      prefix = "targets",
+      predefined_acl = "bucketLevel",
+      verbose = FALSE
     )
   )
 )
@@ -36,24 +44,19 @@ logger::log_threshold(Sys.getenv("LOG_LEVEL", unset = "INFO"))
 
 # Define pipeline
 list(
-  tar_target(
-    data_dir,
-    Sys.getenv("AKTEMPVIZ_DATA_DIR", unset = "data"),
-    cue = tar_cue("always")
-  ),
+  tar_target(data_dir, "data"),
   tar_target(gis_dir, mkdirp(file.path(data_dir, "gis"))),
   tar_target(era5_dir, mkdirp(file.path(data_dir, "era5"))),
   tar_target(output_dir, mkdirp(file.path(data_dir, "output"))),
 
   tar_target(
     wbd_file,
-    file.path(gis_dir, "WBD_19_HU2_GDB", "WBD_19_HU2_GDB.gdb"),
-    format = "file"
+    file.path(gis_dir, "WBD_19_HU2_GDB", "WBD_19_HU2_GDB.gdb")
   ),
   tar_target(wbd, load_wbd(wbd_file)),
   
-  tar_target(usgs_freeze_start_date, "1980-01-01"),
-  tar_target(usgs_freeze_end_date, "2023-12-31"),
+  tar_target(usgs_freeze_start_date, "1950-01-01"),
+  tar_target(usgs_freeze_end_date, "2024-12-31"),
   tar_target(usgs_new_start_date, as.character(lubridate::ymd(usgs_freeze_end_date) + 1)),
   tar_target(usgs_stations, collect_usgs_stations()),
   tar_target(usgs_raw_data_freeze, {
@@ -67,19 +70,7 @@ list(
   tar_target(usgs_raw_data_new, collect_usgs_raw_data(usgs_stations, start_date = usgs_new_start_date)),
   tar_target(usgs_data_freeze, transform_usgs_data(usgs_raw_data_freeze)),
   tar_target(usgs_data_new, transform_usgs_data(usgs_raw_data_new)),
-  tar_target(usgs_data, {
-    data <- bind_rows(
-      usgs_data_freeze,
-      usgs_data_new
-    ) |> 
-      nest_by(station_id) |> 
-      mutate(data = map(data, bind_rows))
-    usgs_stations |>
-      inner_join(
-        data,
-        by = c("station_id")
-      )
-  }),
+  tar_target(usgs_data, merge_usgs_data(usgs_stations, usgs_data_freeze, usgs_data_new)),
 
   tar_target(nps_freeze_start_date, "2008-01-01"),
   tar_target(nps_freeze_end_date, usgs_freeze_end_date),
@@ -102,49 +93,31 @@ list(
   tar_target(aktemp_raw_data, collect_aktemp_raw_data()),
   tar_target(aktemp_data, transform_aktemp_data(aktemp_raw_data)),
 
-  tar_target(
-    combined_data,
-    bind_rows(
-      USGS = usgs_data,
-      NPS = nps_data,
-      AKTEMP = aktemp_data,
-      .id = "dataset"
-    )
-  ),
-  # ERA5-Land air temperature data
-  tar_target(gee_init, init_gee()),
-  tar_target(era5_last_date, find_era5_last_date(gee_init)),
-  tar_target(
-    era5_fetch_plan,
-    determine_era5_fetch_plan(combined_data, era5_dir, era5_last_date)
-  ),
-  tar_target(
-    era5_cache,
-    collect_era5_data(era5_fetch_plan, era5_dir, gee_init)
-  ),
-  tar_target(
-    combined_data_airtemp,
-    merge_era5_to_stations(combined_data, era5_cache)
-  ),
-  tar_target(station_wbd, extract_station_wbd(combined_data, wbd)),
-  tar_target(
-    output_data,
-    transform_output_data(combined_data_airtemp, station_wbd)
-  ),
+  # water temperature dataset
+  tar_target(wtemp_data, combine_wtemp(usgs_data, nps_data, aktemp_data)),
+  tar_target(wtemp_manifest, generate_wtemp_manifest(wtemp_data)),
+
+  # air temperature dataset
+  tar_target(era5_data, fetch_era5_data(wtemp_manifest)),
+
+  # paired datasets
+  tar_target(paired_data, pair_wtemp_atemp(wtemp_data, era5_data)),
+  tar_target(station_wbd, extract_station_wbd(paired_data, wbd)),
+
+  # output files
+  tar_target(output_data, transform_output_data(paired_data, station_wbd)),
   tar_target(
     output_stations_file,
-    export_stations_file(output_data, output_dir),
-    format = "file"
+    export_stations_file(output_data, output_dir)
   ),
   tar_target(
     output_data_files,
-    export_data_files(output_data, output_dir),
-    format = "file"
+    export_data_files(output_data, output_dir)
   ),
   tar_target(
-    config,
+    output_config,
     list(
-      era5_last_date = as.character(era5_last_date),
+      era5_last_date = as.character(era5_data$last_date),
       last_updated = format_ISO8601(
         with_tz(Sys.time(), tzone = "America/Anchorage"),
         usetz = TRUE
@@ -153,12 +126,10 @@ list(
   ),
   tar_target(
     output_config_file,
-    export_config_file(config, output_dir),
-    format = "file"
+    export_config_file(output_config, output_dir)
   ),
   tar_target(
     output_wbd_files,
-    export_wbd_files(wbd, output_dir),
-    format = "file"
+    export_wbd_files(wbd, output_dir)
   )
 )

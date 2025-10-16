@@ -120,7 +120,7 @@ collect_nps_dataset_data <- function(dataset) {
 collect_nps_raw_data <- function(datasets) {
   datasets |>
     mutate(
-      data = map(dataset_identifier, collect_nps_dataset_data)
+      data = map(dataset_identifier, collect_nps_dataset_data, .progress = TRUE)
     ) |>
     select(location_identifier, data)
 }

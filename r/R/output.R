@@ -1,5 +1,5 @@
-transform_output_data <- function(combined_data_airtemp, station_wbd) {
-  combined_data_airtemp |>
+transform_output_data <- function(paired_data, station_wbd) {
+  paired_data |>
     left_join(station_wbd, by = c("dataset", "station_id")) |>
     rowwise() |>
     mutate(

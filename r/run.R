@@ -1,15 +1,18 @@
 #!/usr/bin/env Rscript
 
+library(targets)
 library(logger)
 
 log_appender(appender_stdout)
 log_level <- toupper(Sys.getenv("LOG_LEVEL", unset = "INFO"))
 log_threshold(log_level)
 
+source("_targets.R")
+
+tar_meta_download()
+
 tryCatch(
   {
-    library(targets)
-
     log_info("Running pipeline...")
     tar_invalidate(c(
       "usgs_stations",
@@ -34,10 +37,10 @@ tryCatch(
     # Upload to S3 using AWS CLI
     bucket <- Sys.getenv("AWS_S3_BUCKET")
     prefix <- Sys.getenv("AWS_S3_PREFIX")
-    output_dir <- tar_read(output_dir)
+    output_dir <- "data/output"
 
     # Use system2 to run aws s3 sync command
-    log_info("Uploading to S3...")
+    log_info("Uploading {output_dir} to s3://{bucket}/{prefix}")
     result <- system2(
       "aws",
       args = c(
