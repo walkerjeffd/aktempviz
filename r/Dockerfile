@@ -42,6 +42,7 @@ RUN install2.r --error \
     rgee \
     reticulate \
     googleCloudStorageR \
+    geojsonio \
     && rm -rf /tmp/downloaded_packages
 
 # Create app directory
