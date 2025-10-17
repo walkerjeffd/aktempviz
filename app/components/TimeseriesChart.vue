@@ -1,12 +1,10 @@
 <template>
-  <highcharts :constructor-type="'stockChart'" :options="settings" ref="chartEl"></highcharts>
+  <Chart constructor-type="stockChart" :options="settings" ref="chartEl"></Chart>
 </template>
 
 <script setup>
-import { onMounted, watch, ref, computed } from 'vue'
 import { DateTime } from 'luxon'
-import { monthOptions } from '@/lib/constants'
-
+import { Chart } from 'highcharts-vue'
 const props = defineProps({
   series: Array,
   loading: Boolean,

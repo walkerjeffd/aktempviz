@@ -1,5 +1,5 @@
 <template>
-  <LMap ref="map" :zoom="4" :center="[63,-150]">
+  <LMap ref="map" :zoom="4" :center="[63,-150]" :use-global-leaflet="true">
     <LControlLayers position="topleft"></LControlLayers>
     <LControl position="bottomleft" v-show="props.selected.length === 0">
       <div class="legend">
@@ -170,10 +170,6 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
-import { LMap, LTileLayer, LCircleMarker, LGeoJson, LControlLayers, LControl, LTooltip } from '@vue-leaflet/vue-leaflet'
-
-import { basemaps } from '@/lib/basemaps'
 
 const props = defineProps({
   stations: {
@@ -189,6 +185,7 @@ const props = defineProps({
     default: () => null
   }
 })
+
 const emit = defineEmits(['select', 'select-basin'])
 
 const selectedBasinLayer = ref(null)

@@ -47,6 +47,8 @@ tryCatch(
         "s3",
         "sync",
         "--quiet",
+        "--cache-control",
+        "'max-age=86400, public'",
         output_dir,
         paste0("s3://", bucket, "/", prefix)
       ),

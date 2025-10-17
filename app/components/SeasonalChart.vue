@@ -13,15 +13,15 @@
       </v-btn-toggle>
     </div>
     <v-divider class="mb-2"></v-divider>
-    <highcharts :options="settings" ref="chartEl"></highcharts>
+    <Chart :options="settings" ref="chartEl"></Chart>
   </div>
 </template>
 
 <script setup>
-import { onMounted, watch, ref } from 'vue'
 import { groups } from 'd3-array'
 import { DateTime } from 'luxon'
-import * as HighchartsLib from 'highcharts'
+import * as Highcharts from 'highcharts'
+import { Chart } from 'highcharts-vue'
 
 const props = defineProps(['series', 'loading'])
 const chartEl = ref(null)
@@ -220,7 +220,7 @@ const settings = {
     labels: {
       formatter: function() {
         const date = new Date(2023, 0, this.value + 1);
-        return HighchartsLib.dateFormat('%b', date);
+        return Highcharts.dateFormat('%b', date);
       }
     }
   },
@@ -279,7 +279,7 @@ const settings = {
                     </tr>
                     <tr>
                       <td class="pr-2 text-right">Day of Year</td>
-                      <td><b>${HighchartsLib.dateFormat('%B %e', new Date(2023, 0, point.x))}</b></td>
+                      <td><b>${Highcharts.dateFormat('%B %e', new Date(2023, 0, point.x))}</b></td>
                     </tr>
                     <tr>
                       <td class="pr-2 text-right">Mean</td>

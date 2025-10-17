@@ -28,15 +28,14 @@
       </div>
     </div>
     <v-divider class="my-2"></v-divider>
-    <highcharts :options="settings" ref="chartEl"></highcharts>
+    <Chart :options="settings" ref="chartEl"></Chart>
   </div>
 </template>
 
 <script setup>
 import { onMounted, watch, ref } from 'vue'
 import { DateTime } from 'luxon'
-import { formatDate } from '@/lib/formatDate'
-
+import { Chart } from 'highcharts-vue'
 const props = defineProps(['series', 'loading', 'config'])
 
 const chartEl = ref(null)
