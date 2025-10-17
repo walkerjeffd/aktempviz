@@ -23,7 +23,7 @@
           class="text-caption"
           variant="tonal"
         >
-          Air temp. only available through {{ config.daymet_last_year }}
+          Air temp. available through {{ formatDate(config.era5_last_date) }}
         </v-alert>
       </div>
     </div>
@@ -35,6 +35,7 @@
 <script setup>
 import { onMounted, watch, ref } from 'vue'
 import { DateTime } from 'luxon'
+import { formatDate } from '@/lib/formatDate'
 
 const props = defineProps(['series', 'loading', 'config'])
 
