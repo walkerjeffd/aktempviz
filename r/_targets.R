@@ -87,7 +87,7 @@ list(
   ),
   tar_target(nps_datasets, collect_nps_datasets(nps_metrics)),
   tar_target(nps_stations, transform_nps_datasets(nps_datasets)),
-  tar_target(nps_raw_data, collect_nps_raw_data(nps_datasets)),
+  tar_target(nps_raw_data, collect_nps_raw_data(nps_datasets), error = "continue"),
   tar_target(nps_data, transform_nps_data(nps_stations, nps_raw_data)),
 
   tar_target(aktemp_raw_data, collect_aktemp_raw_data()),
