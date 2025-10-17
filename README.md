@@ -315,7 +315,7 @@ npm run dev
 3. Build and deploy the application:
 
 ```bash
-npm run build
+npm run generate
 npm run deploy
 ```
 
