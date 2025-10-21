@@ -206,29 +206,13 @@ download_from_gcs <- function(bucket, prefix, local_file, max_retries = 10, init
   }
 }
 
+
+
 fetch_era5_data <- function(wtemp_manifest) {
   log_info("era5: initializing GEE")
   gee <- init_gee()
 
-  bucket <- Sys.getenv("GCS_BUCKET")
-  prefix <- "cache/era5.rds"
-  cache_filename <- tempfile(fileext = ".rds")
-
-  googleCloudStorageR::gcs_get_object(
-    object_name = prefix,
-    bucket = bucket,
-    saveToDisk = cache_filename,
-    overwrite = TRUE
-  )
-
-  log_info("era5: loading cache from {cache_filename}")
-  if (file.exists(cache_filename)) {
-    cache <- read_rds(cache_filename)
-    log_info("era5: loaded {nrow(cache$data)} rows from existing cache")
-  } else {
-    log_info("era5: no existing cache found, starting fresh")
-    cache <- list(data = NULL)
-  }
+  cache <- gcs_load_cache(prefix = "cache/era5.rds")
 
   last_full_date <- fetch_era5_last_date(gee)
 
@@ -289,15 +273,8 @@ fetch_era5_data <- function(wtemp_manifest) {
     last_date = last_full_date,
     data = out_data
   )
-  write_rds(out, cache_filename, compress = "gz")
-
-  log_info("era5: saving updated cache {cache_filename} to gs://{bucket}/{prefix}")
-  googleCloudStorageR::gcs_upload(
-    file = cache_filename,
-    bucket = bucket,
-    name = prefix,
-    predefinedAcl = "bucketLevel"
-  )
+  
+  gcs_save_cache(out, prefix = "cache/era5.rds")
 
   out
 }

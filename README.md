@@ -64,6 +64,9 @@ AWS_SECRET_ACCESS_KEY=
 AWS_S3_BUCKET=
 AWS_S3_PREFIX=
 
+# AWS SNS Topic (for pipeline notifications)
+AWS_SNS_TOPIC_ARN=
+
 # Google Cloud Storage
 # GCS_AUTH_JSON contains the JSON key file in base64 encoding
 # GCS_AUTH_JSON=$(cat service-account.json | base64)
@@ -141,6 +144,7 @@ The pipeline will:
 4. Merge water and air temperature data
 5. Generate output files in the data directory
 6. Upload results to S3
+7. Send SNS notification indicating success or failure
 
 **Note**: The pipeline uses targets cloud storage (GCP), so metadata and objects are automatically uploaded to GCS at `gs://${GCS_BUCKET}/targets/meta/` and `gs://${GCS_BUCKET}/targets/objects/`.
 
@@ -197,7 +201,7 @@ service: Elastic Container Service Task
 policy: AmazonECSTaskExecutionRolePolicy
 ```
 
-Create an IAM role for the job that includes S3 access.
+Create an IAM role for the job that includes S3 and SNS access.
 
 ```yml
 name: aktempviz-job
@@ -205,6 +209,7 @@ service: Elastic Container Service Task
 policies:
   - AmazonECSTaskExecutionRolePolicy
   - AmazonS3FullAccess
+  - AmazonSNSFullAccess
 ```
 
 Create a job definition that uses the `aktemp/aktempviz-data` Docker image. Add the environment variables including GEE service account credentials.
@@ -230,6 +235,7 @@ container:
     - AKTEMP_PASSWORD=
     - AWS_S3_BUCKET=
     - AWS_S3_PREFIX=
+    - AWS_SNS_TOPIC_ARN=
     - GCS_AUTH_JSON=
     - GCS_BUCKET=
     - API_USGS_PAT=

@@ -15,3 +15,6 @@ service-account.json
 
 # Environment files
 .env*
+
+# Targets
+_targets/

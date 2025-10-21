@@ -126,9 +126,25 @@ collect_nps_raw_data <- function(datasets) {
 }
 
 transform_nps_data <- function(nps_stations, nps_datasets) {
-  nps_stations |>
+  cache <- gcs_load_cache(prefix = "cache/nps.rds")
+
+  if (is.null(nps_stations) || is.null(nps_datasets)) {
+    log_warn("nps_data: nps_stations or nps_datasets is NULL, returning cached data")
+    return(cache[["data"]])
+  }
+  
+  out_data <- nps_stations |>
     left_join(
       nps_datasets,
       by = c("station_id" = "location_identifier")
     )
+
+  out <- list(
+    updated_at = format_ISO8601(now(), usetz = TRUE),
+    data = out_data
+  )
+    
+  gcs_save_cache(out, prefix = "cache/nps.rds")
+
+  out_data
 }

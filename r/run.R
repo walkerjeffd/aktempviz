@@ -20,51 +20,60 @@ tryCatch(
       "nps_datasets",
       "nps_raw_data",
       "aktemp_raw_data",
-      "config"
+      "config",
     ))
     tar_make()
 
-    log_success("Pipeline completed successfully")
-  },
-  error = function(e) {
-    log_error("Pipeline failed: {conditionMessage(e)}")
-    quit(status = 1)
-  }
-)
+    log_success("Targets pipeline completed successfully")
 
-tryCatch(
-  {
-    # Upload to S3 using AWS CLI
-    bucket <- Sys.getenv("AWS_S3_BUCKET")
-    prefix <- Sys.getenv("AWS_S3_PREFIX")
-    output_dir <- "data/output"
+    progress <- tar_progress()
+    if (any(progress$progress == "errored")) {
+      targets_errored <- paste0(progress$name[progress$progress == "errored"], collapse = ", ")
+      log_warn("Some targets errored: {targets_errored}")
+    } else {
+      targets_errored <- "None"
+    }
 
-    # Use system2 to run aws s3 sync command
-    log_info("Uploading {output_dir} to s3://{bucket}/{prefix}")
-    result <- system2(
-      "aws",
-      args = c(
-        "s3",
-        "sync",
-        "--quiet",
-        "--cache-control",
-        "'max-age=86400, public'",
-        output_dir,
-        paste0("s3://", bucket, "/", prefix)
+    # Upload to S3
+    s3_info <- sync_output_to_s3()
+
+    # Send success notification
+    tar_load(output_config)
+    success_msg <- sprintf(
+      paste0(
+        "The data processing pipeline completed successfully.\n\n",
+        "Data uploaded to: s3://%s/%s\n\n",
+        "Last updated at: %s\n",
+        "Last ERA5-Land date: %s",
+        "\n\n",
+        "Targets errored (if any): %s"
       ),
-      stdout = FALSE,
-      stderr = FALSE
+      s3_info$bucket,
+      s3_info$prefix,
+      output_config$last_updated,
+      output_config$era5_last_date,
+      targets_errored
+    )
+    send_sns_notification(
+      subject = "[AKTEMPVIZ] Pipeline Succeeded",
+      message = success_msg
     )
 
-    if (result == 0) {
-      log_success("S3 upload completed successfully")
-    } else {
-      log_error("S3 upload failed")
-      quit(status = 1)
-    }
+    log_success("Pipeline finished successfully")
   },
   error = function(e) {
-    log_error("S3 upload failed: {conditionMessage(e)}")
+    error_msg <- conditionMessage(e)
+    log_error("Pipeline failed: {error_msg}")
+
+    send_sns_notification(
+      subject = "[AKTEMPVIZ] Pipeline Failed",
+      message = sprintf(
+        "The data processing pipeline failed with error:\n\nTime: %s\n\n%s",
+        lubridate::format_ISO8601(Sys.time(), usetz = TRUE),
+        error_msg
+      )
+    )
+
     quit(status = 1)
   }
 )
